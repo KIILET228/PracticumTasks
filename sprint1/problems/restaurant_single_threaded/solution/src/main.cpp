@@ -9,6 +9,7 @@
 #include <sstream>
 #include <syncstream>
 #include <unordered_map>
+#include <memory>
 
 namespace net = boost::asio;
 namespace sys = boost::system;
@@ -23,7 +24,7 @@ public:
         return cutlet_roasted_;
     }
     void SetCutletRoasted() {
-        if (IsCutletRoasted()) {  // Котлету можно жарить только один раз
+        if (IsCutletRoasted()) {
             throw std::logic_error("Cutlet has been roasted already"s);
         }
         cutlet_roasted_ = true;
@@ -32,12 +33,11 @@ public:
     [[nodiscard]] bool HasOnion() const {
         return has_onion_;
     }
-    // Добавляем лук
     void AddOnion() {
-        if (IsPacked()) {  // Если гамбургер упакован, класть лук в него нельзя
+        if (IsPacked()) {
             throw std::logic_error("Hamburger has been packed already"s);
         }
-        AssureCutletRoasted();  // Лук разрешается класть лишь после прожаривания котлеты
+        AssureCutletRoasted();
         has_onion_ = true;
     }
 
@@ -45,21 +45,20 @@ public:
         return is_packed_;
     }
     void Pack() {
-        AssureCutletRoasted();  // Нельзя упаковывать гамбургер, если котлета не прожарена
+        AssureCutletRoasted();
         is_packed_ = true;
     }
 
 private:
-    // Убеждаемся, что котлета прожарена
     void AssureCutletRoasted() const {
         if (!cutlet_roasted_) {
             throw std::logic_error("Bread has not been roasted yet"s);
         }
     }
 
-    bool cutlet_roasted_ = false;  // Обжарена ли котлета?
-    bool has_onion_ = false;       // Есть ли лук?
-    bool is_packed_ = false;       // Упакован ли гамбургер?
+    bool cutlet_roasted_ = false;
+    bool has_onion_ = false;
+    bool is_packed_ = false;
 };
 
 std::ostream& operator<<(std::ostream& os, const Hamburger& h) {
@@ -85,8 +84,84 @@ private:
     steady_clock::time_point start_time_{steady_clock::now()};
 };
 
-// Функция, которая будет вызвана по окончании обработки заказа
 using OrderHandler = std::function<void(sys::error_code ec, int id, Hamburger* hamburger)>;
+
+class Order : public std::enable_shared_from_this<Order> {
+public:
+    Order(net::io_context& io, int id, bool with_onion, OrderHandler handler)
+        : timer_(io)
+        , id_(id)
+        , with_onion_(with_onion)
+        , handler_(std::move(handler))
+        , logger_("Order " + std::to_string(id)) {
+    }
+
+    void Start() {
+        logger_.LogMessage("Roasting cutlet...");
+        timer_.expires_after(100ms);
+        timer_.async_wait([self = shared_from_this()](sys::error_code ec) {
+            self->OnCutletRoasted(ec);
+        });
+    }
+
+private:
+    void OnCutletRoasted(sys::error_code ec) {
+        if (ec) {
+            handler_(ec, id_, nullptr);
+            return;
+        }
+
+        hamburger_.SetCutletRoasted();
+        logger_.LogMessage("Cutlet roasted");
+
+        if (with_onion_) {
+            logger_.LogMessage("Adding onion...");
+            timer_.expires_after(50ms);
+            timer_.async_wait([self = shared_from_this()](sys::error_code ec) {
+                self->OnOnionAdded(ec);
+            });
+        } else {
+            PackHamburger();
+        }
+    }
+
+    void OnOnionAdded(sys::error_code ec) {
+        if (ec) {
+            handler_(ec, id_, nullptr);
+            return;
+        }
+
+        hamburger_.AddOnion();
+        logger_.LogMessage("Onion added");
+        PackHamburger();
+    }
+
+    void PackHamburger() {
+        logger_.LogMessage("Packing...");
+        timer_.expires_after(50ms);
+        timer_.async_wait([self = shared_from_this()](sys::error_code ec) {
+            self->OnPacked(ec);
+        });
+    }
+
+    void OnPacked(sys::error_code ec) {
+        if (ec) {
+            handler_(ec, id_, nullptr);
+            return;
+        }
+
+        hamburger_.Pack();
+        logger_.LogMessage("Packed");
+        handler_(ec, id_, &hamburger_);
+    }
+
+    Timer timer_;
+    int id_;
+    bool with_onion_;
+    OrderHandler handler_;
+    Logger logger_;
+    Hamburger hamburger_;
+};
 
 class Restaurant {
 public:
@@ -96,7 +171,8 @@ public:
 
     int MakeHamburger(bool with_onion, OrderHandler handler) {
         const int order_id = ++next_order_id_;
-        /* Напишите недостающий код */
+        auto order = std::make_shared<Order>(io_, order_id, with_onion, std::move(handler));
+        order->Start();
         return order_id;
     }
 
@@ -125,14 +201,11 @@ int main() {
     const int id1 = restaurant.MakeHamburger(false, handle_result);
     const int id2 = restaurant.MakeHamburger(true, handle_result);
 
-    // До вызова io.run() никакие заказы не выполняются
     assert(orders.empty());
     io.run();
 
-    // После вызова io.run() все заказы быть выполнены
     assert(orders.size() == 2u);
     {
-        // Проверяем заказ без лука
         const auto& o = orders.at(id1);
         assert(!o.ec);
         assert(o.hamburger.IsCutletRoasted());
@@ -140,7 +213,6 @@ int main() {
         assert(!o.hamburger.HasOnion());
     }
     {
-        // Проверяем заказ с луком
         const auto& o = orders.at(id2);
         assert(!o.ec);
         assert(o.hamburger.IsCutletRoasted());
