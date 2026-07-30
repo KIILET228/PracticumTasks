@@ -24,7 +24,10 @@ void handle_request(tcp::socket& socket) {
         http::response<http::string_body> res;
 
         if (req.method() == http::verb::get || req.method() == http::verb::head) {
-            std::string target = req.target();
+            // Явное преобразование string_view в string
+            std::string target(req.target());
+            
+            // Удаляем ведущий слэш, если он есть
             if (!target.empty() && target[0] == '/') {
                 target = target.substr(1);
             }
@@ -45,6 +48,7 @@ void handle_request(tcp::socket& socket) {
 
         res.prepare_payload();
 
+        // Если запрос HEAD, отправляем только заголовки
         if (req.method() == http::verb::head) {
             http::response<http::empty_body> head_res;
             head_res.result(res.result());
