@@ -38,7 +38,7 @@ void handle_request(tcp::socket& socket) {
             res.body() = body;
             res.result(http::status::ok);
         } else {
-            std::string body = "Invalid method.";
+            std::string body = "Invalid method";
             res.set(http::field::content_type, "text/html");
             res.set(http::field::allow, "GET, HEAD");
             res.content_length(body.size());
