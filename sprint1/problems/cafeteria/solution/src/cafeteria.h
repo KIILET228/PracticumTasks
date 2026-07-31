@@ -29,20 +29,20 @@ public:
 
     void Start() {
         // Начинаем печь булку
-        bread_->StartBake(*cooker_, [self = shared_from_this()]{
+        bread_->StartBake(*cooker_, [self = shared_from_this()] {
             self->OnBreadStarted();
-            });
+        });
 
         // Начинаем жарить сосиску
-        sausage_->StartFry(*cooker_, [self = shared_from_this()]{
+        sausage_->StartFry(*cooker_, [self = shared_from_this()] {
             self->OnSausageStarted();
-            });
+        });
     }
 
 private:
     void OnBreadStarted() {
         // Булка печется 1 секунду
-        timer_.expires_after(Milliseconds{ 1000 });
+        timer_.expires_after(Milliseconds{1000});
         timer_.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
             if (ec) return;
             self->bread_->StopBaking();
@@ -52,7 +52,7 @@ private:
 
     void OnSausageStarted() {
         // Сосиска жарится 1.5 секунды
-        timer_.expires_after(Milliseconds{ 1500 });
+        timer_.expires_after(Milliseconds{1500});
         timer_.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
             if (ec) return;
             self->sausage_->StopFry();
@@ -66,8 +66,7 @@ private:
             try {
                 HotDog hot_dog(id_, sausage_, bread_);
                 handler_(Result<HotDog>{std::move(hot_dog)});
-            }
-            catch (...) {
+            } catch (...) {
                 handler_(Result<HotDog>::FromCurrentException());
             }
         }
@@ -86,7 +85,7 @@ private:
 class Cafeteria {
 public:
     explicit Cafeteria(net::io_context& io)
-        : io_{ io } {
+        : io_{io} {
     }
 
     // Асинхронно готовит хот-дог и вызывает handler, как только хот-дог будет готов.

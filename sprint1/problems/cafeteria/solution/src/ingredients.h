@@ -13,7 +13,7 @@ public:
     using Handler = std::function<void()>;
 
     explicit Sausage(int id)
-        : id_{ id } {
+        : id_{id} {
     }
 
     int GetId() const {
@@ -27,14 +27,14 @@ public:
             throw std::logic_error("Frying already started");
         }
         // Готовимся занять газовую плиту
-        gas_cooker_lock_ = GasCookerLock{ cooker.shared_from_this() };
+        gas_cooker_lock_ = GasCookerLock{cooker.shared_from_this()};
         // Занимаем горелку для начала обжаривания.
         // Чтобы продлить жизнь текущего объекта, захватываем shared_ptr в лямбде
-        cooker.UseBurner([self = shared_from_this(), handler = std::move(handler)]{
+        cooker.UseBurner([self = shared_from_this(), handler = std::move(handler)] {
             // Запоминаем время фактического начала обжаривания
             self->frying_start_time_ = Clock::now();
             handler();
-            });
+        });
     }
 
     // Завершает приготовление и освобождает горелку
@@ -74,7 +74,7 @@ public:
     using Handler = std::function<void()>;
 
     explicit Bread(int id)
-        : id_{ id } {
+        : id_{id} {
     }
 
     int GetId() const {
@@ -87,12 +87,12 @@ public:
         if (baking_start_time_) {
             throw std::logic_error("Baking already started");
         }
-        gas_cooker_lock_ = GasCookerLock{ cooker.shared_from_this() };
-
-        cooker.UseBurner([self = shared_from_this(), handler = std::move(handler)]{
+        gas_cooker_lock_ = GasCookerLock{cooker.shared_from_this()};
+        
+        cooker.UseBurner([self = shared_from_this(), handler = std::move(handler)] {
             self->baking_start_time_ = Clock::now();
             handler();
-            });
+        });
     }
 
     // Останавливает приготовление хлеба и освобождает горелку.
