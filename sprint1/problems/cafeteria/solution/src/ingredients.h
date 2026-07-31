@@ -26,8 +26,6 @@ public:
         if (frying_start_time_) {
             throw std::logic_error("Frying already started");
         }
-        // Запрещаем повторный вызов StartFry
-        frying_start_time_ = Clock::now();
         // Готовимся занять газовую плиту
         gas_cooker_lock_ = GasCookerLock{ cooker.shared_from_this() };
         // Занимаем горелку для начала обжаривания.
@@ -89,7 +87,6 @@ public:
         if (baking_start_time_) {
             throw std::logic_error("Baking already started");
         }
-        baking_start_time_ = Clock::now();
         gas_cooker_lock_ = GasCookerLock{ cooker.shared_from_this() };
 
         cooker.UseBurner([self = shared_from_this(), handler = std::move(handler)]{
