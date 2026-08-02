@@ -21,7 +21,11 @@ public:
 
     template <typename Body, typename Allocator, typename Send>
     void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
-        send(HandleRequest(req.method(), req.target(), req.version(), req.keep_alive()));
+        // req.target() возвращает boost::beast::string_view, а не std::string_view,
+        // поэтому конвертируем его явно
+        const auto target = req.target();
+        send(HandleRequest(req.method(), std::string_view(target.data(), target.size()),
+                           req.version(), req.keep_alive()));
     }
 
 private:

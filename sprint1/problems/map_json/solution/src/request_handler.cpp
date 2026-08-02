@@ -12,7 +12,9 @@ namespace {
 constexpr std::string_view kApiPrefix = "/api/"sv;
 constexpr std::string_view kMapsApi = "/api/v1/maps"sv;
 constexpr std::string_view kMapsApiPrefix = "/api/v1/maps/"sv;
-constexpr std::string_view kContentTypeJson = "application/json"sv;
+// boost::beast::http::basic_fields::set() требует boost::beast::string_view,
+// поэтому объявляем эту константу именно этим типом
+constexpr boost::beast::string_view kContentTypeJson = "application/json";
 
 json::value RoadToJson(const model::Road& road) {
     json::object obj;
@@ -96,8 +98,10 @@ StringResponse MakeJsonResponse(http::status status, const json::value& value, u
 StringResponse MakeErrorResponse(http::status status, std::string_view code, std::string_view message,
                                  unsigned version, bool keep_alive, bool include_body) {
     json::object error;
-    error["code"] = code;
-    error["message"] = message;
+    // boost::json::value::operator= не принимает std::string_view напрямую в Boost 1.78,
+    // поэтому конвертируем в std::string
+    error["code"] = std::string(code);
+    error["message"] = std::string(message);
     return MakeJsonResponse(status, error, version, keep_alive, include_body);
 }
 
