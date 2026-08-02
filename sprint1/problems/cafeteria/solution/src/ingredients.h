@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <functional>
 #include <optional>
 #include "clock.h"
@@ -139,5 +140,5 @@ public:
     }
 
 private:
-    int next_id_ = 0;
+    std::atomic<int> next_id_ = 0;
 };

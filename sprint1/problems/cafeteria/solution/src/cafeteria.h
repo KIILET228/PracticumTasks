@@ -5,6 +5,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/asio/strand.hpp>
+#include <atomic>
 #include <memory>
 #include "hotdog.h"
 #include "result.h"
@@ -18,7 +19,8 @@ using HotDogHandler = std::function<void(Result<HotDog> hot_dog)>;
 class HotDogOrder : public std::enable_shared_from_this<HotDogOrder> {
 public:
     HotDogOrder(net::io_context& io, std::shared_ptr<GasCooker> cooker, Store& store, int id, HotDogHandler handler)
-        : timer_(io)
+        : bread_timer_(io)
+        , sausage_timer_(io)
         , cooker_(std::move(cooker))
         , store_(store)
         , id_(id)
@@ -42,8 +44,8 @@ public:
 private:
     void OnBreadStarted() {
         // Булка печется 1 секунду
-        timer_.expires_after(Milliseconds{1000});
-        timer_.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
+        bread_timer_.expires_after(Milliseconds{1000});
+        bread_timer_.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
             if (ec) return;
             self->bread_->StopBaking();
             self->CheckCompletion();
@@ -52,8 +54,8 @@ private:
 
     void OnSausageStarted() {
         // Сосиска жарится 1.5 секунды
-        timer_.expires_after(Milliseconds{1500});
-        timer_.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
+        sausage_timer_.expires_after(Milliseconds{1500});
+        sausage_timer_.async_wait([self = shared_from_this()](const boost::system::error_code& ec) {
             if (ec) return;
             self->sausage_->StopFry();
             self->CheckCompletion();
@@ -72,7 +74,8 @@ private:
         }
     }
 
-    net::steady_timer timer_;
+    net::steady_timer bread_timer_;
+    net::steady_timer sausage_timer_;
     std::shared_ptr<GasCooker> cooker_;
     Store& store_;
     int id_;
@@ -98,7 +101,7 @@ public:
 
 private:
     net::io_context& io_;
-    int next_order_id_ = 0;
+    std::atomic<int> next_order_id_ = 0;
     // Используется для создания ингредиентов хот-дога
     Store store_;
     // Газовая плита. По условию задачи в кафетерии есть только одна газовая плита на 8 горелок
