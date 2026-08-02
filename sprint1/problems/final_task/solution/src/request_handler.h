@@ -21,8 +21,6 @@ public:
 
     template <typename Body, typename Allocator, typename Send>
     void operator()(http::request<Body, http::basic_fields<Allocator>>&& req, Send&& send) {
-        // req.target() возвращает boost::beast::string_view, а не std::string_view,
-        // поэтому конвертируем его явно
         const auto target = req.target();
         send(HandleRequest(req.method(), std::string_view(target.data(), target.size()),
                            req.version(), req.keep_alive()));
@@ -31,9 +29,8 @@ public:
 private:
     model::Game& game_;
 
-    // Не зависит от типа Body/Allocator, поэтому реализация вынесена в .cpp
     StringResponse HandleRequest(http::verb method, std::string_view target, unsigned version,
                                  bool keep_alive) const;
 };
 
-}  // namespace http_handler
+}

@@ -192,4 +192,4 @@ private:
     MapIdToIndex map_id_to_index_;
 };
 
-}  // namespace model
+}

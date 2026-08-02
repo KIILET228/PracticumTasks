@@ -1,6 +1,5 @@
 #pragma once
 #include "sdk.h"
-//
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/strand.hpp>
@@ -23,15 +22,12 @@ using namespace std::literals;
 
 void ReportError(beast::error_code ec, std::string_view what);
 
-// Базовый класс сессии. Не зависит от типа обработчика запросов
 class SessionBase {
 public:
     SessionBase(const SessionBase&) = delete;
     SessionBase& operator=(const SessionBase&) = delete;
 
     void Run() {
-        // Вызываем метод Read, используя executor объекта stream_.
-        // Таким образом вся работа со stream_ будет выполняться, используя его executor
         net::dispatch(stream_.get_executor(), [self = GetSharedThis()] {
             self->Read();
         });
@@ -48,7 +44,6 @@ protected:
 
     template <typename Body, typename Fields>
     void Write(http::response<Body, Fields>&& response) {
-        // Захватываем shared_ptr на response, чтобы объект жил до завершения записи
         auto safe_response = std::make_shared<http::response<Body, Fields>>(std::move(response));
 
         auto self = GetSharedThis();
@@ -59,14 +54,11 @@ protected:
     }
 
 private:
-    // tcp_stream содержит внутри себя socket и добавляет поддержку таймаутов
     beast::tcp_stream stream_;
     beast::flat_buffer buffer_;
     HttpRequest request_;
 
     void Read() {
-        // Очищаем запрос от прежнего значения (метод Read может быть вызван несколько раз
-        // на одном и том же объекте)
         request_ = {};
         stream_.expires_after(30s);
         http::async_read(stream_, buffer_, request_,
@@ -77,7 +69,6 @@ private:
 
     void OnRead(beast::error_code ec, [[maybe_unused]] std::size_t bytes_read) {
         if (ec == http::error::end_of_stream) {
-            // Нормальная ситуация - клиент закрыл соединение
             return Close();
         }
         if (ec) {
@@ -97,18 +88,14 @@ private:
         }
 
         if (close) {
-            // Семантика ответа требует закрыть соединение
             return Close();
         }
 
-        // Считываем следующий запрос
         Read();
     }
 
-    // Обработать запрос должен переопределить наследник
     virtual void HandleRequest(HttpRequest&& request) = 0;
 
-    // Возвращает shared_ptr<Self>, используя механизм enable_shared_from_this у наследника
     virtual std::shared_ptr<SessionBase> GetSharedThis() = 0;
 };
 
@@ -128,7 +115,6 @@ private:
         return this->shared_from_this();
     }
 
-    // Обрабатывает запрос, передавая его в request_handler_ вместе с функцией отправки ответа
     void HandleRequest(HttpRequest&& request) override {
         request_handler_(std::move(request), [self = this->shared_from_this()](auto&& response) {
             self->Write(std::move(response));
@@ -142,12 +128,9 @@ public:
     template <typename Handler>
     Listener(net::io_context& ioc, const tcp::endpoint& endpoint, Handler&& request_handler)
         : ioc_(ioc)
-        // Открываем acceptor, используя executor strand'а
         , acceptor_(net::make_strand(ioc))
         , request_handler_(std::forward<Handler>(request_handler)) {
         acceptor_.open(endpoint.protocol());
-        // Разрешаем повторно использовать адрес и порт сразу после закрытия предыдущего сокета,
-        // связанного с этим адресом
         acceptor_.set_option(net::socket_base::reuse_address(true));
         acceptor_.bind(endpoint);
         acceptor_.listen(net::socket_base::max_listen_connections);
@@ -164,7 +147,6 @@ private:
 
     void DoAccept() {
         acceptor_.async_accept(
-            // Новое соединение будет обрабатываться в своём strand'е
             net::make_strand(ioc_),
             beast::bind_front_handler(&Listener::OnAccept, this->shared_from_this()));
     }
@@ -174,10 +156,8 @@ private:
             return ReportError(ec, "accept"sv);
         }
 
-        // Асинхронно обрабатываем принятое соединение
         AsyncRunSession(std::move(socket));
 
-        // Принимаем следующее соединение
         DoAccept();
     }
 
@@ -188,11 +168,9 @@ private:
 
 template <typename RequestHandler>
 void ServeHttp(net::io_context& ioc, const tcp::endpoint& endpoint, RequestHandler&& handler) {
-    // При помощи decay_t исключим ссылки из типа RequestHandler,
-    // чтобы Listener хранил RequestHandler по значению
     using MyListener = Listener<std::decay_t<RequestHandler>>;
 
     std::make_shared<MyListener>(ioc, endpoint, std::forward<RequestHandler>(handler))->Run();
 }
 
-}  // namespace http_server
+}

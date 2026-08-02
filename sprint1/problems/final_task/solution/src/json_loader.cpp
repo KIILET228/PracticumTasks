@@ -67,7 +67,7 @@ model::Map ParseMap(const json::object& obj) {
     return map;
 }
 
-}  // namespace
+}
 
 model::Game LoadGame(const std::filesystem::path& json_path) {
     const auto content = ReadFileContents(json_path);
@@ -81,4 +81,4 @@ model::Game LoadGame(const std::filesystem::path& json_path) {
     return game;
 }
 
-}  // namespace json_loader
+}
