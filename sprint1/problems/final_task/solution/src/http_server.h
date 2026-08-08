@@ -27,11 +27,7 @@ public:
     SessionBase(const SessionBase&) = delete;
     SessionBase& operator=(const SessionBase&) = delete;
 
-    void Run() {
-        net::dispatch(stream_.get_executor(), [self = GetSharedThis()] {
-            self->Read();
-        });
-    }
+    void Run();
 
 protected:
     using HttpRequest = http::request<http::string_body>;
@@ -58,41 +54,10 @@ private:
     beast::flat_buffer buffer_;
     HttpRequest request_;
 
-    void Read() {
-        request_ = {};
-        stream_.expires_after(30s);
-        http::async_read(stream_, buffer_, request_,
-                         [self = GetSharedThis()](beast::error_code ec, std::size_t bytes_read) {
-                             self->OnRead(ec, bytes_read);
-                         });
-    }
-
-    void OnRead(beast::error_code ec, [[maybe_unused]] std::size_t bytes_read) {
-        if (ec == http::error::end_of_stream) {
-            return Close();
-        }
-        if (ec) {
-            return ReportError(ec, "read"sv);
-        }
-        HandleRequest(std::move(request_));
-    }
-
-    void Close() {
-        beast::error_code ec;
-        stream_.socket().shutdown(tcp::socket::shutdown_send, ec);
-    }
-
-    void OnWrite(bool close, beast::error_code ec, [[maybe_unused]] std::size_t bytes_written) {
-        if (ec) {
-            return ReportError(ec, "write"sv);
-        }
-
-        if (close) {
-            return Close();
-        }
-
-        Read();
-    }
+    void Read();
+    void OnRead(beast::error_code ec, std::size_t bytes_read);
+    void Close();
+    void OnWrite(bool close, beast::error_code ec, std::size_t bytes_written);
 
     virtual void HandleRequest(HttpRequest&& request) = 0;
 

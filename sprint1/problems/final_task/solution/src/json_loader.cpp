@@ -54,14 +54,18 @@ model::Map ParseMap(const json::object& obj) {
     std::string name{obj.at("name").as_string()};
     model::Map map(std::move(id), std::move(name));
 
-    for (const auto& road_value : obj.at("roads").as_array()) {
-        map.AddRoad(ParseRoad(road_value.as_object()));
-    }
-    for (const auto& building_value : obj.at("buildings").as_array()) {
-        map.AddBuilding(ParseBuilding(building_value.as_object()));
-    }
-    for (const auto& office_value : obj.at("offices").as_array()) {
-        map.AddOffice(ParseOffice(office_value.as_object()));
+    try {
+        for (const auto& road_value : obj.at("roads").as_array()) {
+            map.AddRoad(ParseRoad(road_value.as_object()));
+        }
+        for (const auto& building_value : obj.at("buildings").as_array()) {
+            map.AddBuilding(ParseBuilding(building_value.as_object()));
+        }
+        for (const auto& office_value : obj.at("offices").as_array()) {
+            map.AddOffice(ParseOffice(office_value.as_object()));
+        }
+    } catch (const std::exception& ex) {
+        throw std::runtime_error("Failed to parse map \""s + *id + "\": "s + ex.what());
     }
 
     return map;
@@ -70,13 +74,17 @@ model::Map ParseMap(const json::object& obj) {
 }
 
 model::Game LoadGame(const std::filesystem::path& json_path) {
-    const auto content = ReadFileContents(json_path);
-    const auto value = json::parse(content);
-    const auto& root = value.as_object();
-
     model::Game game;
-    for (const auto& map_value : root.at("maps").as_array()) {
-        game.AddMap(ParseMap(map_value.as_object()));
+    try {
+        const auto content = ReadFileContents(json_path);
+        const auto value = json::parse(content);
+        const auto& root = value.as_object();
+
+        for (const auto& map_value : root.at("maps").as_array()) {
+            game.AddMap(ParseMap(map_value.as_object()));
+        }
+    } catch (const std::exception& ex) {
+        throw std::runtime_error("Failed to load game config from "s + json_path.string() + ": "s + ex.what());
     }
     return game;
 }
