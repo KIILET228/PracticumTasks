@@ -15,21 +15,21 @@ constexpr std::string_view kMapsApiPrefix = "/api/v1/maps/"sv;
 constexpr boost::beast::string_view kContentTypeJson = "application/json";
 
 namespace field {
-constexpr std::string_view kX0 = "x0"sv;
-constexpr std::string_view kY0 = "y0"sv;
-constexpr std::string_view kX1 = "x1"sv;
-constexpr std::string_view kY1 = "y1"sv;
-constexpr std::string_view kX = "x"sv;
-constexpr std::string_view kY = "y"sv;
-constexpr std::string_view kWidth = "w"sv;
-constexpr std::string_view kHeight = "h"sv;
-constexpr std::string_view kId = "id"sv;
-constexpr std::string_view kOffsetX = "offsetX"sv;
-constexpr std::string_view kOffsetY = "offsetY"sv;
-constexpr std::string_view kName = "name"sv;
-constexpr std::string_view kRoads = "roads"sv;
-constexpr std::string_view kBuildings = "buildings"sv;
-constexpr std::string_view kOffices = "offices"sv;
+constexpr json::string_view kX0 = "x0";
+constexpr json::string_view kY0 = "y0";
+constexpr json::string_view kX1 = "x1";
+constexpr json::string_view kY1 = "y1";
+constexpr json::string_view kX = "x";
+constexpr json::string_view kY = "y";
+constexpr json::string_view kWidth = "w";
+constexpr json::string_view kHeight = "h";
+constexpr json::string_view kId = "id";
+constexpr json::string_view kOffsetX = "offsetX";
+constexpr json::string_view kOffsetY = "offsetY";
+constexpr json::string_view kName = "name";
+constexpr json::string_view kRoads = "roads";
+constexpr json::string_view kBuildings = "buildings";
+constexpr json::string_view kOffices = "offices";
 }
 
 namespace error {
