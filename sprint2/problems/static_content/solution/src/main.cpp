@@ -1,6 +1,7 @@
 #include "sdk.h"
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <filesystem>
 #include <iostream>
 #include <thread>
 
@@ -11,6 +12,7 @@
 using namespace std::literals;
 namespace net = boost::asio;
 namespace sys = boost::system;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -28,8 +30,8 @@ void RunWorkers(unsigned n, const Fn& fn) {
 }
 
 int main(int argc, const char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Usage: game_server <game-config-json>"sv << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: game_server <game-config-json> <static-files-root>"sv << std::endl;
         return EXIT_FAILURE;
     }
     try {
@@ -45,7 +47,7 @@ int main(int argc, const char* argv[]) {
             }
         });
 
-        http_handler::RequestHandler handler{game};
+        http_handler::RequestHandler handler{game, fs::path(argv[2])};
 
         const auto address = net::ip::make_address("0.0.0.0");
         constexpr net::ip::port_type port = 8080;
