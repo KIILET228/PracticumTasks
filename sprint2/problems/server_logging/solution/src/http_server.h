@@ -53,7 +53,8 @@ protected:
 
         std::optional<std::string_view> content_type;
         if (response.count(http::field::content_type)) {
-            content_type = response[http::field::content_type];
+            const auto value = response[http::field::content_type];
+            content_type = std::string_view(value.data(), value.size());
         }
         server_logging::LogResponseSent(remote_ip_, response_time_ms, response.result_int(), content_type);
 
