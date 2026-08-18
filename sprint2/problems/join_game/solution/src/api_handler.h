@@ -23,12 +23,12 @@ public:
     ApiHandler(const ApiHandler&) = delete;
     ApiHandler& operator=(const ApiHandler&) = delete;
 
-    StringResponse HandleApiRequest(const StringRequest& req) const;
+    StringResponse HandleApiRequest(const StringRequest& req);
 
 private:
     app::Application application_;
 
-    StringResponse HandleJoin(const StringRequest& req) const;
+    StringResponse HandleJoin(const StringRequest& req);
     StringResponse HandlePlayers(const StringRequest& req) const;
     StringResponse HandleMapsApi(http::verb method, std::string_view target, unsigned version,
                                  bool keep_alive) const;

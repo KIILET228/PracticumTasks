@@ -25,7 +25,7 @@ StringResponse MakeJsonResponse(http::status status, const json::value& value, u
 
     StringResponse response(status, version);
     response.set(http::field::content_type, kContentTypeJson);
-    response.set(http::field::cache_control, "no-cache"sv);
+    response.set(http::field::cache_control, "no-cache");
     response.content_length(body.size());
     response.keep_alive(keep_alive);
     if (include_body) {
@@ -139,7 +139,7 @@ std::optional<app::Token> TryExtractToken(const StringRequest& req) {
 
 }  // namespace
 
-StringResponse ApiHandler::HandleApiRequest(const StringRequest& req) const {
+StringResponse ApiHandler::HandleApiRequest(const StringRequest& req) {
     const auto target_bsv = req.target();
     const std::string_view target(target_bsv.data(), target_bsv.size());
 
@@ -152,14 +152,14 @@ StringResponse ApiHandler::HandleApiRequest(const StringRequest& req) const {
     return HandleMapsApi(req.method(), target, req.version(), req.keep_alive());
 }
 
-StringResponse ApiHandler::HandleJoin(const StringRequest& req) const {
+StringResponse ApiHandler::HandleJoin(const StringRequest& req) {
     const unsigned version = req.version();
     const bool keep_alive = req.keep_alive();
 
     if (req.method() != http::verb::post) {
         StringResponse response = MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv,
                                                      "Only POST method is expected"sv, version, keep_alive, true);
-        response.set(http::field::allow, "POST"sv);
+        response.set(http::field::allow, "POST");
         return response;
     }
 
@@ -194,7 +194,7 @@ StringResponse ApiHandler::HandlePlayers(const StringRequest& req) const {
     if (req.method() != http::verb::get && req.method() != http::verb::head) {
         StringResponse response = MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv,
                                                      "Invalid method"sv, version, keep_alive, true);
-        response.set(http::field::allow, "GET, HEAD"sv);
+        response.set(http::field::allow, "GET, HEAD");
         return response;
     }
 
