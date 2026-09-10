@@ -1,6 +1,6 @@
 FROM gcc:11 AS build
 
-RUN apt-get update && \
+RUN apt-get update -o Acquire::Check-Valid-Until=false && \
     apt-get install -y \
         python3-pip \
         cmake \
