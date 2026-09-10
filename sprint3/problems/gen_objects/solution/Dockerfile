@@ -1,11 +1,16 @@
 FROM gcc:11 AS build
 
 RUN apt-get update -o Acquire::Check-Valid-Until=false && \
-    apt-get install -y \
-        python3-pip \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        python3 \
+        python3-distutils \
         cmake \
         make && \
-    rm -rf /var/lib/apt/lists/*
+    curl -sS https://bootstrap.pypa.io/pip/3.9/get-pip.py -o /tmp/get-pip.py && \
+    python3 /tmp/get-pip.py "pip<24" && \
+    rm -rf /var/lib/apt/lists/* /tmp/get-pip.py
 
 RUN pip3 install "conan<2.0"
 
