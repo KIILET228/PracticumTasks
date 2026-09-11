@@ -12,7 +12,7 @@ RUN apt-get update && \
         cmake \
     && \
     rm -rf /var/lib/apt/lists/* && \
-    pip3 install --no-cache-dir "conan==1.65.*"
+    pip3 install --no-cache-dir --break-system-packages "conan==1.65.*"
 
 # The conanfile.txt uses the [generators] cmake_multi, which needs one
 # `conan install` per build type (it then merges them into
