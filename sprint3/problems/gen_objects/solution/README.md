@@ -1,79 +1,134 @@
-# Что было не так
+# Найденные и исправленные ошибки
 
-Сборка падала не в C++-коде, а на этапе Docker-сборки в CI:
+CI падал последовательно на разных этапах — вот все ошибки по порядку и что
+с ними сделано.
+
+## 1. `apt-get update` падал: просроченный индекс bullseye-security
 
 ```
-#13 [build 2/10] RUN apt-get update && apt-get install -y python3-pip cmake make ...
-E: Release file for http://deb.debian.org/debian-security/dists/bullseye-security/InRelease
-   is expired (invalid since 2d 3h 38min 36s)
+E: Release file for .../bullseye-security/InRelease is expired
 ```
 
-Образ `gcc:11` собран на Debian bullseye. Метаданные репозитория
-`bullseye-security` на используемом зеркале оказались просрочены
-(`Valid-Until` в прошлом) — apt в таком случае по умолчанию отказывается
-обновлять индексы и весь `apt-get update` падает с кодом 100. Из-за этого
-Docker-образ вообще не собирался, и до запуска юнит-тестов/автотестов дело
-не доходило.
+Образ `gcc:11` собран на Debian bullseye; метаданные `bullseye-security` на
+зеркале оказались просрочены (`Valid-Until` в прошлом), apt по умолчанию
+отказывается обновлять индексы с таким файлом.
 
-## Исправление (шаг 1)
-
-В `Dockerfile`, в стадии `build`, добавлен флаг, отключающий проверку
-срока действия индексов apt:
+**Фикс:** флаг, отключающий проверку срока действия индекса:
 
 ```dockerfile
 RUN apt-get update -o Acquire::Check-Valid-Until=false && ...
 ```
 
-Это стандартный и безопасный обходной путь именно для этой ошибки
-(протухшие метаданные архивного/просроченного дистрибутива): пакеты
-как устанавливались с этого зеркала, так и продолжают устанавливаться,
-просто apt перестаёт сверять срок действия подписи индекса.
+## 2. `apt-get install` падал: 404 на python3-pip / python3-pkg-resources
 
-## Вторая ошибка и исправление (шаг 2)
+После фикса №1 `update` стал проходить, но `install` падал с `404 Not Found`
+на конкретные файлы пакетов из `bullseye-security`. Это рассинхронизация
+edge-кеша `deb.debian.org` (Fastly CDN) — Packages-индекс с одного узла CDN
+ссылается на версии, файлы которых на этом же узле уже удалены (типично
+сразу после публикации security-патча). Обычный `apt-get update` это не
+лечит.
 
-После первого фикса `apt-get update` стал проходить, но следующий
-`apt-get install` начал падать с `404 Not Found` для `python3-pip` и
-`python3-pkg-resources` из `bullseye-security`. Это не связано с первым
-фиксом — это рассинхронизация edge-кеша `deb.debian.org` (Fastly CDN):
-Packages-индекс, отданный конкретным узлом, ссылается на версии пакетов,
-файлы которых на этом же узле уже удалены (обычно происходит сразу после
-публикации security-апдейта, пока не все edge-узлы обновили кеш пакетов).
-Повторный `apt-get update` эту рассинхронизацию не лечит.
-
-Решение — вообще не тянуть `python3-pip` через apt (он нужен только чтобы
-получить `pip`), а поставить `pip` напрямую через `get-pip.py`, в обход
-нестабильного apt-пакета:
+**Фикс:** не тянуть `python3-pip` через apt вообще, поставить `pip` напрямую
+через `get-pip.py`, в обход нестабильного apt-пакета:
 
 ```dockerfile
 RUN apt-get update -o Acquire::Check-Valid-Until=false && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        python3 \
-        python3-distutils \
-        cmake \
-        make && \
+        ca-certificates curl python3 python3-distutils cmake make && \
     curl -sS https://bootstrap.pypa.io/pip/3.9/get-pip.py -o /tmp/get-pip.py && \
     python3 /tmp/get-pip.py "pip<24" && \
     rm -rf /var/lib/apt/lists/* /tmp/get-pip.py
 ```
 
-`ca-certificates`/`curl`/`python3`/`python3-distutils`/`cmake`/`make` —
-стабильные пакеты из `main`/давних сборок, а не из свежего
-security-патча, поэтому шанс попасть на ту же рассинхронизацию у них
-на порядки ниже. `get-pip.py` версии `3.9` совместим с Python 3.9,
-который идёт в образе `gcc:11` (Debian bullseye).
+## 3. `cmake ..` падал: `conanbuildinfo.cmake` не найден
+
+```
+CMake Error at CMakeLists.txt:11 (include): include could not find load file:
+    /app/build/conanbuildinfo.cmake
+CMake Error: Unknown CMake command "conan_basic_setup".
+```
+
+Дошли до этапа сборки самого сервера — и здесь настоящий баг в самом
+проекте, а не в окружении. `conanfile.txt` использует генератор
+`cmake_multi`:
+
+```ini
+[generators]
+cmake_multi
+```
+
+Этот генератор создаёт файлы `conanbuildinfo_multi.cmake` +
+`conanbuildinfo_<config>.cmake` (в логе: `conanbuildinfo_release.cmake`), а
+**не** `conanbuildinfo.cmake`. `CMakeLists.txt` же был написан в расчёте на
+одноконфигурационный генератор `cmake` и включал именно
+`conanbuildinfo.cmake` — файла с таким именем просто не существовало.
+
+**Фикс** (по документации Conan 1.x для `cmake_multi`):
+
+```cmake
+include(${CMAKE_BINARY_DIR}/conanbuildinfo_multi.cmake)
+conan_basic_setup(TARGETS)
+```
+
+## 4. Скрытая ошибка в CMakeLists.txt, всплыла бы на тестовом таргете
+
+```cmake
+target_include_directories(game_server_tests PRIVATE src CONAN_PKG::boost)
+```
+
+`target_include_directories` принимает пути к каталогам, а не имена
+target'ов. `CONAN_PKG::boost` — это alias-таргет для `target_link_libraries`
+(он и так уже подключён строкой ниже), а не путь. Убрал лишний/неверный
+аргумент:
+
+```cmake
+target_include_directories(game_server_tests PRIVATE src)
+```
+
+## 5. Ещё одна ошибка, которая проявилась бы уже после успешной сборки
+
+```dockerfile
+COPY --from=build /app/build/bin/game_server ./game_server
+```
+
+`CMakeLists.txt` нигде не задавал `CMAKE_RUNTIME_OUTPUT_DIRECTORY`, поэтому
+по умолчанию CMake кладёт бинарник прямо в `/app/build/game_server`, без
+подпапки `bin/`. `COPY` на run-стадии не нашёл бы файл.
+
+**Фикс** — явно задать каталог вывода бинарников в `CMakeLists.txt`, чтобы
+он совпадал с тем, что ожидает `Dockerfile`:
+
+```cmake
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+```
+
+## 6. Хрупкость в main.cpp (доп. проверка, не проявлялась в логах)
+
+`main.cpp` использует `std::vector` и `std::max`, но не подключает
+`<vector>`/`<algorithm>` напрямую — работало только за счёт того, что их
+транзитивно тянут заголовки Boost.Asio. Добавил явные инклюды, чтобы не
+зависеть от деталей реализации конкретной версии Boost:
+
+```cpp
+#include <algorithm>
+#include <vector>
+```
 
 ## Остальной код
 
 Логику `LootGenerator::Generate`, `GameSession::MakeRandomLostObject`,
-`GameSession::GenerateLoot`, а также сериализацию `lostObjects`/`lootTypes`
-в `api_handler.cpp` и `extra_data.h` я прогнал вручную по каждому
-тест-кейсу из `loot_generator_tests.cpp` и `model-tests.cpp` — все они
-совпадают с ожидаемым поведением из ТЗ, ошибок не нашлось. `model.cpp` и
-`loot_generator.cpp` также успешно проходят `g++ -fsyntax-only` (полную
-сборку с Boost/Conan я здесь проверить не могу — в этой среде нет сети и
-предустановленных Boost.Beast/Boost.Log/Catch2, а также CMake/Conan).
+`GameSession::GenerateLoot`, сериализацию `lostObjects`/`lootTypes` в
+`api_handler.cpp`/`extra_data.h`, а также остальные `.cpp`/`.h` файлы
+(`request_handler`, `http_server`, `players`, `app`, `json_loader`,
+`logger`) я вручную прошёл ещё раз построчно: сверил с каждым тест-кейсом
+из `loot_generator_tests.cpp`/`model-tests.cpp` и с ТЗ — расхождений не
+нашёл. `model.cpp`, `loot_generator.cpp`, `app.cpp`, `players.cpp` также
+чисто проходят `g++ -std=c++20 -fsyntax-only`.
+
+Полную сборку с реальным Boost/Conan/CMake здесь проверить не могу — в этой
+среде нет сети и предустановленных Boost.Beast/Boost.Log/Catch2/CMake/Conan,
+поэтому часть проверки (пункты 3–6) сделана по документации Conan/CMake и
+построчным ручным разбором, а не прогоном компилятора.
 
 ## Чего не хватает в архиве
 
@@ -87,11 +142,12 @@ security-патча, поэтому шанс попасть на ту же ра�
 
 ```
 .
-├── CMakeLists.txt
-├── Dockerfile        (исправлен)
+├── CMakeLists.txt     (исправлен: п.3, п.4, п.5)
+├── Dockerfile          (исправлен: п.1, п.2)
 ├── conanfile.txt
 ├── data/
 │   └── config.json
-├── src/               (весь бэкенд, без изменений — багов не найдено)
-└── tests/             (Catch2-тесты, без изменений)
+├── src/
+│   └── main.cpp        (исправлен: п.6; остальное — без изменений)
+└── tests/              (без изменений)
 ```

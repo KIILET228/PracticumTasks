@@ -8,7 +8,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+include(${CMAKE_BINARY_DIR}/conanbuildinfo_multi.cmake)
 conan_basic_setup(TARGETS)
 
 find_package(Threads REQUIRED)
@@ -58,5 +60,5 @@ add_executable(game_server_tests
     tests/model-tests.cpp
 )
 
-target_include_directories(game_server_tests PRIVATE src CONAN_PKG::boost)
+target_include_directories(game_server_tests PRIVATE src)
 target_link_libraries(game_server_tests PRIVATE CONAN_PKG::catch2 CONAN_PKG::boost Threads::Threads)
