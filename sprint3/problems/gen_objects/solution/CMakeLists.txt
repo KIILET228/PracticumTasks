@@ -10,9 +10,6 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo_multi.cmake)
-conan_basic_setup(TARGETS)
-
 find_package(Threads REQUIRED)
 
 # ---------------------------------------------------------------------------
@@ -45,20 +42,55 @@ add_executable(game_server
 )
 
 target_include_directories(game_server PRIVATE src)
-target_link_libraries(game_server PRIVATE Threads::Threads CONAN_PKG::boost)
+target_link_libraries(game_server PRIVATE Threads::Threads)
 
 # ---------------------------------------------------------------------------
-# Unit tests (Catch2)
+# Boost: two supported ways to get it, picked automatically.
+#
+# 1. Conan (conanbuildinfo_multi.cmake present, i.e. `conan install` was run
+#    for this build dir) - used for local development, and required to build
+#    the Catch2 unit tests below. This is what conanfile.txt is for.
+# 2. A Boost already findable by CMake (e.g. installed via the system package
+#    manager, as in the Docker image) - no Conan involved at all. This exists
+#    because Conan Center's Boost recipe downloads sources from a mirror
+#    (boostorg.jfrog.io) that is frequently broken/rate-limited, which made
+#    Docker builds flaky; apt's Boost package doesn't have that problem and
+#    is all the runtime image needs (it never builds the unit tests).
 # ---------------------------------------------------------------------------
-add_executable(game_server_tests
-    src/model.h
-    src/model.cpp
-    src/loot_generator.h
-    src/loot_generator.cpp
-    src/tagged.h
-    tests/loot_generator_tests.cpp
-    tests/model-tests.cpp
-)
+if(EXISTS "${CMAKE_BINARY_DIR}/conanbuildinfo_multi.cmake")
+    include(${CMAKE_BINARY_DIR}/conanbuildinfo_multi.cmake)
+    conan_basic_setup(TARGETS)
 
-target_include_directories(game_server_tests PRIVATE src CONAN_PKG::boost)
-target_link_libraries(game_server_tests PRIVATE CONAN_PKG::catch2 CONAN_PKG::boost Threads::Threads)
+    target_link_libraries(game_server PRIVATE CONAN_PKG::boost)
+
+    # -----------------------------------------------------------------------
+    # Unit tests (Catch2) - only built when Conan is available, since that's
+    # the only place catch2 comes from.
+    # -----------------------------------------------------------------------
+    add_executable(game_server_tests
+        src/model.h
+        src/model.cpp
+        src/loot_generator.h
+        src/loot_generator.cpp
+        src/tagged.h
+        tests/loot_generator_tests.cpp
+        tests/model-tests.cpp
+    )
+
+    target_include_directories(game_server_tests PRIVATE src CONAN_PKG::boost)
+    target_link_libraries(game_server_tests PRIVATE CONAN_PKG::catch2 CONAN_PKG::boost Threads::Threads)
+else()
+    find_package(Boost REQUIRED COMPONENTS json log log_setup thread filesystem date_time)
+    target_link_libraries(game_server PRIVATE
+        Boost::json
+        Boost::log
+        Boost::log_setup
+        Boost::thread
+        Boost::filesystem
+        Boost::date_time
+    )
+    # Needed because the system Boost package ships shared (.so) libraries;
+    # without this, boost::log's headers assume static linkage and the
+    # binary fails to link.
+    target_compile_definitions(game_server PRIVATE BOOST_LOG_DYN_LINK)
+endif()
