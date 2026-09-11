@@ -1,54 +1,51 @@
-FROM gcc:11 AS build
+# syntax=docker/dockerfile:1
 
-RUN apt-get update -o Acquire::Check-Valid-Until=false && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        python3 \
-        python3-distutils \
-        cmake \
-        make && \
-    curl -sS https://bootstrap.pypa.io/pip/3.9/get-pip.py -o /tmp/get-pip.py && \
-    python3 /tmp/get-pip.py "pip<24" && \
-    rm -rf /var/lib/apt/lists/* /tmp/get-pip.py
-
-RUN pip3 install "conan<2.0"
-
-RUN conan profile new default --detect && \
-    conan profile update settings.compiler.libcxx=libstdc++11 default
-
-WORKDIR /app
-
-COPY conanfile.txt .
-
-RUN mkdir -p build && cd build && \
-    conan install .. --build=missing
-
-COPY CMakeLists.txt .
-COPY src/ ./src/
-
-RUN cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build . -j$(nproc)
-
-FROM ubuntu:22.04 AS run
+# ---------------------------------------------------------------------------
+# Stage 1: build the game server with Conan + CMake
+# ---------------------------------------------------------------------------
+FROM gcc:12.3.0 AS build
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libstdc++6 && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+        python3-pip \
+        python3-setuptools \
+        cmake \
+    && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip3 install --no-cache-dir "conan==1.65.*"
 
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+# The conanfile.txt uses the [generators] cmake_multi, which needs one
+# `conan install` per build type (it then merges them into
+# conanbuildinfo_multi.cmake, picked up by CMakeLists.txt based on
+# CMAKE_BUILD_TYPE).
+COPY conanfile.txt /app/
+RUN mkdir -p /app/build && cd /app/build && \
+    conan profile new default --detect >/dev/null && \
+    conan profile update settings.compiler.libcxx=libstdc++11 default && \
+    conan install .. --build=missing -s build_type=Debug && \
+    conan install .. --build=missing -s build_type=Release
 
-WORKDIR /app
+COPY ./src /app/src
+COPY CMakeLists.txt /app/
 
-COPY --from=build /app/build/bin/game_server ./game_server
+RUN cd /app/build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . --target game_server -j"$(nproc)"
 
-COPY data/config.json ./data/config.json
+# ---------------------------------------------------------------------------
+# Stage 2: minimal runtime image
+# ---------------------------------------------------------------------------
+FROM ubuntu:22.04 AS run
 
-COPY static/ ./static/
+RUN groupadd -r www && useradd -r -g www www
 
-USER appuser
+COPY --from=build /app/build/bin/game_server /app/
+COPY ./data /app/data
+COPY ./static /app/static
+
+RUN chown -R www:www /app
+USER www
 
 EXPOSE 8080
 
-ENTRYPOINT ["./game_server", "data/config.json", "static"]
+ENTRYPOINT ["/app/game_server", "/app/data/config.json", "/app/static"]

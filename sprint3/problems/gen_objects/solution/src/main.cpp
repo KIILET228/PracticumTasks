@@ -1,11 +1,9 @@
 #include "sdk.h"
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <thread>
-#include <vector>
 
 #include "http_server.h"
 #include "json_loader.h"

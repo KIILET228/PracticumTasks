@@ -25,11 +25,10 @@ model::GameSession::UniformRandomGenerator FixedValue(double value) {
     };
 }
 
-// A probability generator that always makes LootGenerator realize the full
-// deterministic probability for the elapsed time (i.e. it never scales the
-// result down). Under the new formula, random_generator_()'s return value is
-// a multiplier on (1 - (1 - probability)^ratio), so 1.0 is the "maximal
-// generation" value, not 0.0 (that would zero everything out).
+// LootGenerator::Generate multiplies its exponential-decay probability
+// estimate by whatever random_generator_() returns (a noise factor in
+// [0, 1]); returning 1.0 applies no dampening, i.e. the full computed
+// shortage is filled as soon as at least one base_interval has elapsed.
 loot_gen::LootGenerator::RandomGenerator AlwaysSucceed() {
     return [] {
         return 1.0;
