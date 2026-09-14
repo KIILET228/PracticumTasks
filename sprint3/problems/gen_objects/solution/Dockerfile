@@ -1,13 +1,13 @@
-FROM gcc:11 AS build
+FROM gcc:12 AS build
 
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
         python3-pip \
         cmake \
         make && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install "conan<2.0"
+RUN pip3 install --no-cache-dir "conan<2.0"
 
 RUN conan profile new default --detect && \
     conan profile update settings.compiler.libcxx=libstdc++11 default
