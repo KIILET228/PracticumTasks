@@ -7,7 +7,7 @@ RUN apt-get update && \
         make && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir "conan<2.0"
+RUN pip3 install --no-cache-dir --break-system-packages "conan<2.0"
 
 RUN conan profile new default --detect && \
     conan profile update settings.compiler.libcxx=libstdc++11 default
