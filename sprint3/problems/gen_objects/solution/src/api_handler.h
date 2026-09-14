@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/beast/http.hpp>
+#include <chrono>
 #include <string_view>
 
 #include "app.h"
@@ -14,12 +15,13 @@ namespace http = beast::http;
 using StringRequest = http::request<http::string_body>;
 using StringResponse = http::response<http::string_body>;
 
-// Handles every request whose target starts with "/api/".
 class ApiHandler {
 public:
-    ApiHandler(model::Game& game, const extra_data::LootTypesInfo& extra_data)
+
+    ApiHandler(model::Game& game, const extra_data::LootTypesInfo& loot_types_info, bool tick_endpoint_enabled)
         : application_{game}
-        , extra_data_{extra_data} {
+        , loot_types_info_{loot_types_info}
+        , tick_endpoint_enabled_{tick_endpoint_enabled} {
     }
 
     ApiHandler(const ApiHandler&) = delete;
@@ -27,9 +29,12 @@ public:
 
     StringResponse HandleApiRequest(const StringRequest& req);
 
+    void Tick(std::chrono::milliseconds delta);
+
 private:
     app::Application application_;
-    const extra_data::LootTypesInfo& extra_data_;
+    const extra_data::LootTypesInfo& loot_types_info_;
+    bool tick_endpoint_enabled_;
 
     StringResponse HandleJoin(const StringRequest& req);
     StringResponse HandlePlayers(const StringRequest& req) const;
@@ -40,4 +45,4 @@ private:
                                  bool keep_alive) const;
 };
 
-}  // namespace http_handler
+}

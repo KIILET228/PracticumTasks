@@ -26,4 +26,4 @@ const Player* Players::FindByToken(const Token& token) const {
     return nullptr;
 }
 
-}  // namespace app
+}

@@ -2,7 +2,6 @@
 
 #include <boost/json.hpp>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <sstream>
@@ -27,8 +26,6 @@ std::string ReadFileContents(const std::filesystem::path& path) {
     return stream.str();
 }
 
-// boost::json numbers may be stored as int64/uint64/double depending on how
-// they were written in the source; accept any of them as a numeric value.
 double ToDouble(const json::value& value) {
     if (value.is_double()) {
         return value.as_double();
@@ -69,9 +66,9 @@ model::Office ParseOffice(const json::object& obj) {
     return model::Office(std::move(id), position, offset);
 }
 
-model::Map ParseMap(const json::object& obj, double default_dog_speed, extra_data::LootTypesInfo& extra_data) {
-    const std::string id_str{obj.at("id").as_string()};
-    model::Map::Id id{id_str};
+model::Map ParseMap(const json::object& obj, double default_dog_speed,
+                    extra_data::LootTypesInfo& loot_types_info) {
+    model::Map::Id id{std::string(obj.at("id").as_string())};
     std::string name{obj.at("name").as_string()};
     model::Map map(std::move(id), std::move(name));
 
@@ -92,15 +89,14 @@ model::Map ParseMap(const json::object& obj, double default_dog_speed, extra_dat
             map.AddOffice(ParseOffice(office_value.as_object()));
         }
 
-        if (const auto* loot_types_value = obj.if_contains("lootTypes")) {
-            const auto& loot_types = loot_types_value->as_array();
-            map.SetLootTypesCount(static_cast<unsigned>(loot_types.size()));
-            extra_data.AddMapLootTypes(map.GetId(), loot_types);
-        } else {
-            map.SetLootTypesCount(0);
+        const auto& loot_types_array = obj.at("lootTypes").as_array();
+        if (loot_types_array.empty()) {
+            throw std::runtime_error("lootTypes must contain at least one loot type");
         }
+        map.SetLootTypesCount(loot_types_array.size());
+        loot_types_info.Add(map.GetId(), loot_types_array);
     } catch (const std::exception& ex) {
-        throw std::runtime_error("Failed to parse map \""s + id_str + "\": "s + ex.what());
+        throw std::runtime_error("Failed to parse map \""s + *id + "\": "s + ex.what());
     }
 
     return map;
@@ -109,9 +105,7 @@ model::Map ParseMap(const json::object& obj, double default_dog_speed, extra_dat
 }
 
 GameData LoadGame(const std::filesystem::path& json_path) {
-    model::Game game;
-    extra_data::LootTypesInfo extra_data;
-
+    GameData game_data;
     try {
         const auto content = ReadFileContents(json_path);
         const auto value = json::parse(content);
@@ -122,25 +116,19 @@ GameData LoadGame(const std::filesystem::path& json_path) {
             default_dog_speed = ToDouble(*default_dog_speed_value);
         }
 
-        loot_gen::LootGenerator::TimeInterval loot_gen_period{};
-        double loot_gen_probability = 0.0;
-        if (const auto* loot_gen_config_value = root.if_contains("lootGeneratorConfig")) {
-            const auto& loot_gen_config = loot_gen_config_value->as_object();
-            const double period_seconds = ToDouble(loot_gen_config.at("period"));
-            loot_gen_period =
-                std::chrono::milliseconds(static_cast<std::int64_t>(std::llround(period_seconds * 1000.0)));
-            loot_gen_probability = ToDouble(loot_gen_config.at("probability"));
-        }
-        game.SetLootGeneratorConfig(loot_gen_period, loot_gen_probability);
-
         for (const auto& map_value : root.at("maps").as_array()) {
-            game.AddMap(ParseMap(map_value.as_object(), default_dog_speed, extra_data));
+            game_data.game.AddMap(ParseMap(map_value.as_object(), default_dog_speed, game_data.loot_types_info));
         }
+
+        const auto& loot_gen_cfg = root.at("lootGeneratorConfig").as_object();
+        const double period_s = ToDouble(loot_gen_cfg.at("period"));
+        const double probability = ToDouble(loot_gen_cfg.at("probability"));
+        const auto period = std::chrono::milliseconds(static_cast<std::int64_t>(period_s * 1000));
+        game_data.game.SetLootGeneratorConfig(period, probability);
     } catch (const std::exception& ex) {
         throw std::runtime_error("Failed to load game config from "s + json_path.string() + ": "s + ex.what());
     }
-
-    return GameData{std::move(game), std::move(extra_data)};
+    return game_data;
 }
 
 }

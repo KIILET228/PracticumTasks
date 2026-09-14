@@ -11,12 +11,10 @@ namespace app {
 
 namespace detail {
 struct TokenTag {};
-}  // namespace detail
+}
 
-// A 32-hex-digit authentication token.
 using Token = util::Tagged<std::string, detail::TokenTag>;
 
-// Generates pseudo-random 32-hex-digit tokens.
 class PlayerTokens {
 public:
     Token GenerateToken();
@@ -33,8 +31,6 @@ private:
     }()};
 };
 
-// A player is the agent through which a user (identified by a token) controls a dog
-// within a particular game session.
 class Player {
 public:
     Player(Token token, model::Dog& dog, model::GameSession& session) noexcept
@@ -47,7 +43,6 @@ public:
         return token_;
     }
 
-    // The player's id is the id of the dog it controls, unique within its session.
     std::uint64_t GetId() const noexcept {
         return *dog_.GetId();
     }
@@ -68,8 +63,7 @@ private:
 
 class Players {
 public:
-    // Registers a new player controlling the given dog within the given session,
-    // generating a fresh authentication token for it.
+
     Player& Add(model::Dog& dog, model::GameSession& session);
 
     const Player* FindByToken(const Token& token) const;
@@ -80,4 +74,4 @@ private:
     std::unordered_map<Token, Player*, util::TaggedHasher<Token>> token_to_player_;
 };
 
-}  // namespace app
+}

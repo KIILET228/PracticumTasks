@@ -19,7 +19,6 @@ namespace expr = boost::log::expressions;
 namespace attrs = boost::log::attributes;
 namespace json = boost::json;
 
-// Attributes attached to every log record we format.
 BOOST_LOG_ATTRIBUTE_KEYWORD(timestamp, "TimeStamp", boost::posix_time::ptime)
 BOOST_LOG_ATTRIBUTE_KEYWORD(additional_data, "AdditionalData", json::value)
 
@@ -45,7 +44,7 @@ void JsonFormatter(logging::record_view const& rec, logging::formatting_ostream&
     strm << json::serialize(entry);
 }
 
-}  // namespace
+}
 
 void InitLogging() {
     logging::add_common_attributes();
@@ -107,4 +106,4 @@ void LogError(int code, std::string_view text, std::string_view where) {
     LogInfo("error", std::move(data));
 }
 
-}  // namespace server_logging
+}

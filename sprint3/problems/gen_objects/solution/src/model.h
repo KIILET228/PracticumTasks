@@ -2,7 +2,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
-#include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -32,21 +32,16 @@ struct Offset {
     Dimension dx, dy;
 };
 
-// Real-valued coordinates, used for a dog's precise position on the map
-// (as opposed to the integer Point used for the static map geometry).
 struct Position {
     double x = 0;
     double y = 0;
 };
 
-// A dog's velocity, in map units per second along each axis.
 struct Speed {
     double vx = 0;
     double vy = 0;
 };
 
-// Axis-aligned box (in real map coordinates) that a dog is allowed to occupy,
-// computed as the union of the road rectangles it currently stands on.
 struct Bounds {
     double min_x = 0;
     double max_x = 0;
@@ -187,17 +182,6 @@ public:
         dog_speed_ = dog_speed;
     }
 
-    // Number of distinct loot types configured for this map (the actual,
-    // frontend-facing description of each type lives outside the model,
-    // see the extra_data module).
-    unsigned GetLootTypesCount() const noexcept {
-        return loot_types_count_;
-    }
-
-    void SetLootTypesCount(unsigned count) noexcept {
-        loot_types_count_ = count;
-    }
-
     void AddRoad(const Road& road) {
         roads_.emplace_back(road);
     }
@@ -208,10 +192,18 @@ public:
 
     void AddOffice(Office office);
 
-    // Returns the union of the rectangles (road center line +/- half width) of every
-    // road that contains `pos`. Used to clamp a dog's movement to the road network.
-    // If no road contains `pos`, returns a degenerate box equal to `pos` itself.
     Bounds ComputeBounds(Position pos) const noexcept;
+
+    // Количество различных типов трофеев (lootTypes), заданных для этой карты
+    // в конфигурационном файле. Само содержимое lootTypes (нужное лишь фронтенду)
+    // модель не хранит - см. модуль extra_data.
+    unsigned GetLootTypesCount() const noexcept {
+        return loot_types_count_;
+    }
+
+    void SetLootTypesCount(unsigned loot_types_count) noexcept {
+        loot_types_count_ = loot_types_count;
+    }
 
 private:
     using OfficeIdToIndex = std::unordered_map<Office::Id, size_t, util::TaggedHasher<Office::Id>>;
@@ -227,7 +219,6 @@ private:
     Offices offices_;
 };
 
-// A dog controlled by a player within a single game session.
 class Dog {
 public:
     using Id = util::Tagged<std::uint64_t, Dog>;
@@ -278,10 +269,6 @@ private:
     Direction direction_ = Direction::NORTH;
 };
 
-// A lost (dropped) object lying somewhere on a map's road network, waiting to
-// be picked up by a dog. `type` is an index into the map's lootTypes array
-// (the actual description of what that type looks like is frontend-only data
-// that lives outside the model, see the extra_data module).
 class LostObject {
 public:
     using Id = util::Tagged<std::uint64_t, LostObject>;
@@ -310,19 +297,21 @@ private:
     Position position_;
 };
 
-// A live game session on a particular map: the set of dogs currently playing there,
-// plus every lost object currently lying on the map's roads.
-// References the Map it belongs to, so it must not outlive the Game's map list.
 class GameSession {
 public:
-    // Returns a pseudo-random value uniformly distributed in [0, 1).
+    using TimeInterval = loot_gen::LootGenerator::TimeInterval;
+    // Генератор псевдослучайных чисел в диапазоне [0, 1), используемый для
+    // выбора дороги, точки на дороге и типа трофея при генерации потерянных
+    // предметов. Вынесен отдельно от LootGenerator::RandomGenerator, чтобы
+    // тесты могли независимо контролировать оба источника случайности.
     using UniformRandomGenerator = std::function<double()>;
 
-    GameSession(const Map& map, loot_gen::LootGenerator::TimeInterval loot_gen_period, double loot_gen_probability,
-                loot_gen::LootGenerator::RandomGenerator loot_prob_gen = DefaultLootProbabilityGenerator,
-                UniformRandomGenerator uniform_gen = DefaultUniformGenerator)
+    GameSession(const Map& map, TimeInterval loot_base_interval, double loot_probability,
+               loot_gen::LootGenerator::RandomGenerator loot_random_gen, UniformRandomGenerator uniform_gen,
+               bool randomize_spawn_points = false)
         : map_(map)
-        , loot_generator_(loot_gen_period, loot_gen_probability, std::move(loot_prob_gen))
+        , randomize_spawn_points_(randomize_spawn_points)
+        , loot_generator_(loot_base_interval, loot_probability, std::move(loot_random_gen))
         , uniform_gen_(std::move(uniform_gen)) {
     }
 
@@ -333,48 +322,36 @@ public:
         return map_;
     }
 
-    // Adds a new dog to the session, placed at the session's starting position,
-    // with zero speed and the default (north) direction. Returns a stable
-    // reference to it.
     Dog& AddDog(std::string name);
 
     const std::deque<Dog>& GetDogs() const noexcept {
         return dogs_;
     }
 
-    // Advances every dog in the session by dt_seconds according to its current
-    // speed, stopping a dog (and zeroing its speed) at the edge of the road
-    // network if the unobstructed move would take it off the road.
     void Move(double dt_seconds);
-
-    // Advances the session's loot generator by `dt` and adds any newly
-    // generated lost objects to the session, each placed at a random point on
-    // a randomly chosen road of the session's map, with a random type in
-    // [0, map.GetLootTypesCount()).
-    void GenerateLoot(loot_gen::LootGenerator::TimeInterval dt);
 
     const std::deque<LostObject>& GetLostObjects() const noexcept {
         return lost_objects_;
     }
 
+    // Спрашивает у встроенного LootGenerator, сколько трофеев должно
+    // появиться на карте спустя time_delta с момента предыдущего вызова, и
+    // генерирует их в случайных точках на случайных дорогах карты.
+    void GenerateLoot(TimeInterval time_delta);
+
 private:
     Position GenerateStartPosition() const;
-    LostObject MakeRandomLostObject();
-
-    // Production-quality defaults: a real, thread-local Mersenne Twister
-    // seeded from std::random_device. Tests should inject their own
-    // deterministic generators instead of relying on these.
-    static double DefaultLootProbabilityGenerator();
-    static double DefaultUniformGenerator();
 
     const Map& map_;
+    bool randomize_spawn_points_;
     std::deque<Dog> dogs_;
     std::uint64_t next_dog_id_ = 0;
 
+    std::deque<LostObject> lost_objects_;
+    std::uint64_t next_loot_id_ = 0;
+
     loot_gen::LootGenerator loot_generator_;
     UniformRandomGenerator uniform_gen_;
-    std::deque<LostObject> lost_objects_;
-    std::uint64_t next_lost_object_id_ = 0;
 };
 
 class Game {
@@ -394,21 +371,18 @@ public:
         return nullptr;
     }
 
-    // Sets the parameters used to construct the LootGenerator of every game
-    // session created afterwards (existing sessions keep their old config).
-    void SetLootGeneratorConfig(loot_gen::LootGenerator::TimeInterval period, double probability) noexcept {
-        loot_gen_period_ = period;
-        loot_gen_probability_ = probability;
-    }
-
-    // Returns the game session for the given map, creating one on first use.
-    // Throws std::invalid_argument if the map does not exist.
     GameSession& JoinSession(const Map::Id& map_id);
 
-    // Advances game time by `delta` on every active session: moves every dog
-    // according to its current speed and the road-network rules, and
-    // generates new lost objects according to each session's loot generator.
     void Tick(std::chrono::milliseconds delta);
+
+    void SetRandomizeSpawnPoints(bool randomize_spawn_points) noexcept {
+        randomize_spawn_points_ = randomize_spawn_points;
+    }
+
+    // Настраивает генератор трофеев значениями из конфигурационного файла.
+    // period задаётся в миллисекундах, probability - вероятность появления
+    // трофея в течение period.
+    void SetLootGeneratorConfig(std::chrono::milliseconds period, double probability);
 
 private:
     using MapIdHasher = util::TaggedHasher<Map::Id>;
@@ -417,12 +391,12 @@ private:
     std::vector<Map> maps_;
     MapIdToIndex map_id_to_index_;
 
-    loot_gen::LootGenerator::TimeInterval loot_gen_period_{};
-    double loot_gen_probability_ = 0.0;
-
-    // One session per map, created lazily on the first join.
     std::deque<GameSession> sessions_;
     MapIdToIndex map_id_to_session_index_;
+    bool randomize_spawn_points_ = false;
+
+    std::chrono::milliseconds loot_period_{1000};
+    double loot_probability_ = 0.0;
 };
 
 }

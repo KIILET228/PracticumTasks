@@ -10,9 +10,6 @@
 
 namespace app {
 
-// A game-logic error, identified by a protocol-agnostic error code
-// (e.g. "mapNotFound", "invalidArgument", "unknownToken").
-// The HTTP layer is responsible for translating this into a status code.
 class ApplicationError : public std::runtime_error {
 public:
     ApplicationError(std::string code, std::string message)
@@ -48,8 +45,11 @@ struct LostObjectState {
     model::Position pos;
 };
 
-// Implements the game's use cases (joining, listing players, ...),
-// independent of any particular transport protocol.
+struct GameStateResult {
+    std::map<std::uint64_t, PlayerState> players;
+    std::map<std::uint64_t, LostObjectState> lost_objects;
+};
+
 class Application {
 public:
     explicit Application(model::Game& game) noexcept
@@ -63,30 +63,14 @@ public:
         return game_;
     }
 
-    // Throws ApplicationError("invalidArgument", ...) if user_name is empty,
-    // or ApplicationError("mapNotFound", ...) if the map does not exist.
     JoinGameResult JoinGame(const std::string& user_name, const std::string& map_id_str);
 
-    // Throws ApplicationError("unknownToken", ...) if the token is not recognized.
     std::map<std::uint64_t, PlayerInfo> GetPlayers(const Token& token) const;
 
-    // Throws ApplicationError("unknownToken", ...) if the token is not recognized.
-    std::map<std::uint64_t, PlayerState> GetGameState(const Token& token) const;
+    GameStateResult GetGameState(const Token& token) const;
 
-    // Returns every lost object currently lying on the map of the session the
-    // given token belongs to, keyed by lost-object id.
-    // Throws ApplicationError("unknownToken", ...) if the token is not recognized.
-    std::map<std::uint64_t, LostObjectState> GetLostObjects(const Token& token) const;
-
-    // Sets the controlled dog's speed/direction according to move ("L"/"R"/"U"/"D"/"").
-    // Throws ApplicationError("unknownToken", ...) if the token is not recognized,
-    // or ApplicationError("invalidArgument", "Failed to parse action") if move is not
-    // one of the five accepted values.
     void SetPlayerAction(const Token& token, const std::string& move);
 
-    // Advances game time by `delta`, moving every dog in every active session
-    // according to its current speed and the road-network rules, and
-    // generating new lost objects according to each session's loot generator.
     void Tick(std::chrono::milliseconds delta);
 
 private:
@@ -94,4 +78,4 @@ private:
     Players players_;
 };
 
-}  // namespace app
+}

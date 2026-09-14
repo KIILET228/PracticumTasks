@@ -9,24 +9,6 @@
       "dogSpeed": 4.0,
       "id": "map1",
       "name": "Map 1",
-      "lootTypes": [
-        {
-          "name": "key",
-          "file": "assets/key.obj",
-          "type": "obj",
-          "rotation": 90,
-          "color" : "#338844",
-          "scale": 0.03
-        },
-        {
-          "name": "wallet",
-          "file": "assets/wallet.obj",
-          "type": "obj",
-          "rotation": 0,
-          "color" : "#883344",
-          "scale": 0.01
-        }
-      ],
       "roads": [
         {
           "x0": 0,
@@ -65,25 +47,29 @@
           "offsetX": 5,
           "offsetY": 0
         }
-      ]
-    },
-    {
-      "id": "town",
-      "name": "Town",
+      ],
       "lootTypes": [
         {
           "name": "key",
           "file": "assets/key.obj",
           "type": "obj",
+          "rotation": 90,
+          "color": "#338844",
           "scale": 0.03
         },
         {
           "name": "wallet",
           "file": "assets/wallet.obj",
           "type": "obj",
+          "rotation": 0,
+          "color": "#883344",
           "scale": 0.01
         }
-      ],
+      ]
+    },
+    {
+      "id": "town",
+      "name": "Town",
       "roads": [
         {
           "x0": 0,
@@ -325,6 +311,24 @@
           "y": 30,
           "offsetX": 5,
           "offsetY": 0
+        }
+      ],
+      "lootTypes": [
+        {
+          "name": "key",
+          "file": "assets/key.obj",
+          "type": "obj",
+          "rotation": 90,
+          "color": "#338844",
+          "scale": 0.03
+        },
+        {
+          "name": "wallet",
+          "file": "assets/wallet.obj",
+          "type": "obj",
+          "rotation": 0,
+          "color": "#883344",
+          "scale": 0.01
         }
       ]
     }

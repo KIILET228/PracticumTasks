@@ -9,13 +9,38 @@ using namespace std::literals;
 
 namespace {
 
-// Half the width of a road: a dog may not stray further than this distance
-// from the road's center line.
 constexpr double kRoadHalfWidth = 0.4;
-
-// Small tolerance for floating point comparisons when deciding whether a
-// point lies on a road.
 constexpr double kEps = 1e-9;
+
+std::mt19937& GetRandomEngine() {
+    static thread_local std::mt19937 engine{std::random_device{}()};
+    return engine;
+}
+
+double NextUniform01() {
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    return dist(GetRandomEngine());
+}
+
+// Реальный (не тестовый) генератор псевдослучайных чисел в диапазоне [0, 1),
+// используемый и для генератора трофеев, и для выбора точек на дорогах.
+std::function<double()> MakeRealRandomSource() {
+    return [] {
+        return NextUniform01();
+    };
+}
+
+// Выбирает точку на дороге по параметру t из [0, 1): 0 соответствует началу
+// дороги, значения ближе к 1 - концу дороги.
+Position PointOnRoad(const Road& road, double t) {
+    const Point start = road.GetStart();
+    const Point end = road.GetEnd();
+
+    if (road.IsHorizontal()) {
+        return Position{static_cast<double>(start.x) + t * (end.x - start.x), static_cast<double>(start.y)};
+    }
+    return Position{static_cast<double>(start.x), static_cast<double>(start.y) + t * (end.y - start.y)};
+}
 
 }  // namespace
 
@@ -58,8 +83,6 @@ Bounds Map::ComputeBounds(Position pos) const noexcept {
     }
 
     if (!found) {
-        // The dog isn't on any road (shouldn't normally happen): don't allow it
-        // to move at all.
         return Bounds{pos.x, pos.x, pos.y, pos.y};
     }
     return bounds;
@@ -94,29 +117,56 @@ void Game::AddMap(Map map) {
     }
 }
 
-double GameSession::DefaultLootProbabilityGenerator() {
-    static thread_local std::mt19937_64 generator{std::random_device{}()};
-    static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
-    return dist(generator);
-}
-
-double GameSession::DefaultUniformGenerator() {
-    static thread_local std::mt19937_64 generator{std::random_device{}()};
-    static thread_local std::uniform_real_distribution<double> dist(0.0, 1.0);
-    return dist(generator);
-}
-
 Position GameSession::GenerateStartPosition() const {
-    // TODO: this is a temporary simplification to make autotesting easier;
-    // restore random placement (on a random road, at a random point along it)
-    // once time-control testing is done.
     const auto& roads = map_.GetRoads();
     if (roads.empty()) {
         return Position{0.0, 0.0};
     }
 
-    const Point start = roads.front().GetStart();
-    return Position{static_cast<double>(start.x), static_cast<double>(start.y)};
+    if (!randomize_spawn_points_) {
+        const Point start = roads.front().GetStart();
+        return Position{static_cast<double>(start.x), static_cast<double>(start.y)};
+    }
+
+    size_t road_index = static_cast<size_t>(uniform_gen_() * roads.size());
+    if (road_index >= roads.size()) {
+        road_index = roads.size() - 1;
+    }
+    const double t = uniform_gen_();
+    return PointOnRoad(roads[road_index], t);
+}
+
+void GameSession::GenerateLoot(TimeInterval time_delta) {
+    const auto loot_count = static_cast<unsigned>(lost_objects_.size());
+    const auto looter_count = static_cast<unsigned>(dogs_.size());
+    const unsigned generated = loot_generator_.Generate(time_delta, loot_count, looter_count);
+
+    if (generated == 0) {
+        return;
+    }
+
+    const auto& roads = map_.GetRoads();
+    const size_t loot_types_count = map_.GetLootTypesCount();
+    if (roads.empty() || loot_types_count == 0) {
+        return;
+    }
+
+    for (unsigned i = 0; i < generated; ++i) {
+        size_t road_index = static_cast<size_t>(uniform_gen_() * roads.size());
+        if (road_index >= roads.size()) {
+            road_index = roads.size() - 1;
+        }
+        const double t = uniform_gen_();
+        const Position position = PointOnRoad(roads[road_index], t);
+
+        unsigned type = static_cast<unsigned>(uniform_gen_() * loot_types_count);
+        if (type >= loot_types_count) {
+            type = static_cast<unsigned>(loot_types_count) - 1;
+        }
+
+        LostObject::Id id{next_loot_id_++};
+        lost_objects_.emplace_back(id, type, position);
+    }
 }
 
 void GameSession::Move(double dt_seconds) {
@@ -162,46 +212,9 @@ Dog& GameSession::AddDog(std::string name) {
     return dogs_.emplace_back(id, std::move(name), GenerateStartPosition());
 }
 
-LostObject GameSession::MakeRandomLostObject() {
-    const auto& roads = map_.GetRoads();
-
-    if (roads.empty()) {
-        // Shouldn't normally happen for a valid map, but don't crash if it does.
-        LostObject::Id id{next_lost_object_id_++};
-        return LostObject{id, 0, Position{0.0, 0.0}};
-    }
-
-    size_t road_index = 0;
-    if (roads.size() > 1) {
-        road_index = std::min(roads.size() - 1, static_cast<size_t>(uniform_gen_() * static_cast<double>(roads.size())));
-    }
-    const Road& road = roads[road_index];
-    const Point start = road.GetStart();
-    const Point end = road.GetEnd();
-
-    const double t = uniform_gen_();
-    const double x = static_cast<double>(start.x) + (static_cast<double>(end.x) - static_cast<double>(start.x)) * t;
-    const double y = static_cast<double>(start.y) + (static_cast<double>(end.y) - static_cast<double>(start.y)) * t;
-
-    const unsigned loot_types_count = std::max(1u, map_.GetLootTypesCount());
-    unsigned type = 0;
-    if (loot_types_count > 1) {
-        type = std::min(loot_types_count - 1,
-                        static_cast<unsigned>(uniform_gen_() * static_cast<double>(loot_types_count)));
-    }
-
-    LostObject::Id id{next_lost_object_id_++};
-    return LostObject{id, type, Position{x, y}};
-}
-
-void GameSession::GenerateLoot(loot_gen::LootGenerator::TimeInterval dt) {
-    const unsigned loot_count = static_cast<unsigned>(lost_objects_.size());
-    const unsigned looter_count = static_cast<unsigned>(dogs_.size());
-    const unsigned new_loot_count = loot_generator_.Generate(dt, loot_count, looter_count);
-
-    for (unsigned i = 0; i < new_loot_count; ++i) {
-        lost_objects_.push_back(MakeRandomLostObject());
-    }
+void Game::SetLootGeneratorConfig(std::chrono::milliseconds period, double probability) {
+    loot_period_ = period;
+    loot_probability_ = probability;
 }
 
 void Game::Tick(std::chrono::milliseconds delta) {
@@ -223,9 +236,10 @@ GameSession& Game::JoinSession(const Map::Id& map_id) {
     }
 
     const size_t index = sessions_.size();
-    sessions_.emplace_back(*map, loot_gen_period_, loot_gen_probability_);
+    sessions_.emplace_back(*map, loot_period_, loot_probability_, MakeRealRandomSource(), MakeRealRandomSource(),
+                           randomize_spawn_points_);
     map_id_to_session_index_.emplace(map_id, index);
     return sessions_.back();
 }
 
-}
+}  // namespace model

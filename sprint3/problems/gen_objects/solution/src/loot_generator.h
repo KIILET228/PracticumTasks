@@ -1,4 +1,5 @@
 #pragma once
+
 #include <chrono>
 #include <functional>
 
@@ -39,6 +40,7 @@ private:
     static double DefaultGenerator() noexcept {
         return 1.0;
     };
+
     TimeInterval base_interval_;
     double probability_;
     TimeInterval time_without_loot_{};

@@ -1,14 +1,16 @@
 #pragma once
 #include "api_handler.h"
-#include "extra_data.h"
 #include "http_server.h"
 #include "model.h"
+#include "ticker.h"
 
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/strand.hpp>
 
+#include <chrono>
 #include <filesystem>
+#include <memory>
 #include <string_view>
 #include <variant>
 
@@ -22,9 +24,10 @@ using FileResponse = http::response<http::file_body>;
 
 class RequestHandler {
 public:
-    RequestHandler(model::Game& game, const extra_data::LootTypesInfo& extra_data, fs::path static_root,
-                   net::io_context& ioc)
-        : api_handler_{game, extra_data}
+
+    RequestHandler(model::Game& game, const extra_data::LootTypesInfo& loot_types_info, fs::path static_root,
+                  net::io_context& ioc, bool tick_endpoint_enabled)
+        : api_handler_{game, loot_types_info, tick_endpoint_enabled}
         , static_root_{fs::weakly_canonical(static_root)}
         , api_strand_{net::make_strand(ioc)} {
     }
@@ -32,15 +35,19 @@ public:
     RequestHandler(const RequestHandler&) = delete;
     RequestHandler& operator=(const RequestHandler&) = delete;
 
+    void EnablePeriodicTicks(std::chrono::milliseconds period) {
+        std::make_shared<Ticker>(api_strand_, period, [this](std::chrono::milliseconds delta) {
+            api_handler_.Tick(delta);
+        })->Start();
+    }
+
     template <typename Send>
     void operator()(StringRequest&& req, Send&& send) {
         const auto target = req.target();
         const std::string_view target_sv(target.data(), target.size());
 
         if (target_sv.starts_with(kApiPrefix)) {
-            // All REST API requests are executed on a single strand, so concurrent
-            // requests from different connections/threads can't race on shared
-            // game state (Game/GameSession/Players).
+
             net::dispatch(api_strand_, [this, req = std::move(req), send = std::forward<Send>(send)]() mutable {
                 send(api_handler_.HandleApiRequest(req));
             });

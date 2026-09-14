@@ -89,7 +89,7 @@ json::value MapToBriefJson(const model::Map& map) {
     return obj;
 }
 
-json::value MapToFullJson(const model::Map& map, const extra_data::LootTypesInfo& extra_data) {
+json::value MapToFullJson(const model::Map& map, const extra_data::LootTypesInfo& loot_types_info) {
     json::array roads;
     for (const auto& road : map.GetRoads()) {
         roads.push_back(RoadToJson(road));
@@ -110,7 +110,7 @@ json::value MapToFullJson(const model::Map& map, const extra_data::LootTypesInfo
     obj["buildings"] = std::move(buildings);
     obj["offices"] = std::move(offices);
 
-    if (const auto* loot_types = extra_data.FindLootTypes(map.GetId())) {
+    if (const auto* loot_types = loot_types_info.Find(map.GetId())) {
         obj["lootTypes"] = *loot_types;
     } else {
         obj["lootTypes"] = json::array{};
@@ -133,7 +133,6 @@ std::string_view DirectionToString(model::Direction dir) {
     return "U"sv;
 }
 
-// Checks the Content-Type header is present and is exactly "application/json".
 bool HasJsonContentType(const StringRequest& req) {
     const auto it = req.find(http::field::content_type);
     if (it == req.end()) {
@@ -143,8 +142,6 @@ bool HasJsonContentType(const StringRequest& req) {
     return value == "application/json"sv;
 }
 
-// Extracts and validates the bearer token from the Authorization header.
-// Returns std::nullopt if the header is missing or its value is malformed.
 std::optional<app::Token> TryExtractToken(const StringRequest& req) {
     const auto it = req.find(http::field::authorization);
     if (it == req.end()) {
@@ -173,7 +170,12 @@ std::optional<app::Token> TryExtractToken(const StringRequest& req) {
     return app::Token{std::move(token_str)};
 }
 
-}  // namespace
+StringResponse MakeInvalidEndpointResponse(unsigned version, bool keep_alive, bool include_body) {
+    return MakeErrorResponse(http::status::bad_request, "badRequest"sv, "Invalid endpoint"sv, version, keep_alive,
+                             include_body);
+}
+
+}
 
 StringResponse ApiHandler::HandleApiRequest(const StringRequest& req) {
     const auto target_bsv = req.target();
@@ -192,6 +194,9 @@ StringResponse ApiHandler::HandleApiRequest(const StringRequest& req) {
         return HandleAction(req);
     }
     if (target == kGameTick) {
+        if (!tick_endpoint_enabled_) {
+            return MakeInvalidEndpointResponse(req.version(), req.keep_alive(), true);
+        }
         return HandleTick(req);
     }
     return HandleMapsApi(req.method(), target, req.version(), req.keep_alive());
@@ -286,33 +291,32 @@ StringResponse ApiHandler::HandleState(const StringRequest& req) const {
     }
 
     try {
-        const auto players = application_.GetGameState(*token);
+        const auto state = application_.GetGameState(*token);
         json::object players_json;
-        for (const auto& [id, state] : players) {
+        for (const auto& [id, player_state] : state.players) {
             json::array pos;
-            pos.push_back(state.pos.x);
-            pos.push_back(state.pos.y);
+            pos.push_back(player_state.pos.x);
+            pos.push_back(player_state.pos.y);
 
             json::array speed;
-            speed.push_back(state.speed.vx);
-            speed.push_back(state.speed.vy);
+            speed.push_back(player_state.speed.vx);
+            speed.push_back(player_state.speed.vy);
 
             json::object player_obj;
             player_obj["pos"] = std::move(pos);
             player_obj["speed"] = std::move(speed);
-            player_obj["dir"] = std::string(DirectionToString(state.dir));
+            player_obj["dir"] = std::string(DirectionToString(player_state.dir));
             players_json[std::to_string(id)] = std::move(player_obj);
         }
 
-        const auto lost_objects = application_.GetLostObjects(*token);
         json::object lost_objects_json;
-        for (const auto& [id, object] : lost_objects) {
+        for (const auto& [id, lost_object] : state.lost_objects) {
             json::array pos;
-            pos.push_back(object.pos.x);
-            pos.push_back(object.pos.y);
+            pos.push_back(lost_object.pos.x);
+            pos.push_back(lost_object.pos.y);
 
             json::object object_obj;
-            object_obj["type"] = object.type;
+            object_obj["type"] = lost_object.type;
             object_obj["pos"] = std::move(pos);
             lost_objects_json[std::to_string(id)] = std::move(object_obj);
         }
@@ -368,6 +372,10 @@ StringResponse ApiHandler::HandleAction(const StringRequest& req) {
     }
 
     return MakeJsonResponse(http::status::ok, json::object{}, version, keep_alive, true);
+}
+
+void ApiHandler::Tick(std::chrono::milliseconds delta) {
+    application_.Tick(delta);
 }
 
 StringResponse ApiHandler::HandleTick(const StringRequest& req) {
@@ -433,15 +441,14 @@ StringResponse ApiHandler::HandleMapsApi(http::verb method, std::string_view tar
         const std::string map_id_str{target.substr(kMapsApiPrefix.size())};
         const model::Map::Id map_id{map_id_str};
         if (const auto* map = application_.GetGame().FindMap(map_id)) {
-            return MakeJsonResponse(http::status::ok, MapToFullJson(*map, extra_data_), version, keep_alive,
+            return MakeJsonResponse(http::status::ok, MapToFullJson(*map, loot_types_info_), version, keep_alive,
                                     include_body);
         }
         return MakeErrorResponse(http::status::not_found, "mapNotFound"sv, "Map not found"sv, version, keep_alive,
                                  include_body);
     }
 
-    return MakeErrorResponse(http::status::bad_request, "badRequest"sv, "Bad request"sv, version, keep_alive,
-                             include_body);
+    return MakeInvalidEndpointResponse(version, keep_alive, include_body);
 }
 
-}  // namespace http_handler
+}

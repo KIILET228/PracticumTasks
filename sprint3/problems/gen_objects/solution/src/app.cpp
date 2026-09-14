@@ -32,28 +32,19 @@ std::map<std::uint64_t, PlayerInfo> Application::GetPlayers(const Token& token) 
     return result;
 }
 
-std::map<std::uint64_t, PlayerState> Application::GetGameState(const Token& token) const {
+GameStateResult Application::GetGameState(const Token& token) const {
     const Player* player = players_.FindByToken(token);
     if (!player) {
         throw ApplicationError("unknownToken", "Player token has not been found");
     }
 
-    std::map<std::uint64_t, PlayerState> result;
+    GameStateResult result;
     for (const auto& dog : player->GetSession().GetDogs()) {
-        result.emplace(*dog.GetId(), PlayerState{dog.GetPosition(), dog.GetSpeed(), dog.GetDirection()});
+        result.players.emplace(*dog.GetId(), PlayerState{dog.GetPosition(), dog.GetSpeed(), dog.GetDirection()});
     }
-    return result;
-}
-
-std::map<std::uint64_t, LostObjectState> Application::GetLostObjects(const Token& token) const {
-    const Player* player = players_.FindByToken(token);
-    if (!player) {
-        throw ApplicationError("unknownToken", "Player token has not been found");
-    }
-
-    std::map<std::uint64_t, LostObjectState> result;
-    for (const auto& object : player->GetSession().GetLostObjects()) {
-        result.emplace(*object.GetId(), LostObjectState{object.GetType(), object.GetPosition()});
+    for (const auto& lost_object : player->GetSession().GetLostObjects()) {
+        result.lost_objects.emplace(*lost_object.GetId(),
+                                    LostObjectState{lost_object.GetType(), lost_object.GetPosition()});
     }
     return result;
 }
@@ -80,7 +71,7 @@ void Application::SetPlayerAction(const Token& token, const std::string& move) {
         dog.SetSpeed(model::Speed{0.0, speed});
         dog.SetDirection(model::Direction::SOUTH);
     } else if (move.empty()) {
-        // Stop: zero the speed but leave the facing direction unchanged.
+
         dog.SetSpeed(model::Speed{0.0, 0.0});
     } else {
         throw ApplicationError("invalidArgument", "Failed to parse action");
@@ -91,4 +82,4 @@ void Application::Tick(std::chrono::milliseconds delta) {
     game_.Tick(delta);
 }
 
-}  // namespace app
+}
