@@ -423,8 +423,10 @@ StringResponse ApiHandler::HandleMapsApi(http::verb method, std::string_view tar
 
     if (target == kMapsApi) {
         if (!method_supported) {
-            return MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv, "Invalid method"sv,
-                                     version, keep_alive, include_body);
+            StringResponse response = MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv,
+                                                         "Invalid method"sv, version, keep_alive, include_body);
+            response.set(http::field::allow, "GET, HEAD");
+            return response;
         }
         json::array maps_json;
         for (const auto& map : application_.GetGame().GetMaps()) {
@@ -435,8 +437,10 @@ StringResponse ApiHandler::HandleMapsApi(http::verb method, std::string_view tar
 
     if (target.starts_with(kMapsApiPrefix)) {
         if (!method_supported) {
-            return MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv, "Invalid method"sv,
-                                     version, keep_alive, include_body);
+            StringResponse response = MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv,
+                                                         "Invalid method"sv, version, keep_alive, include_body);
+            response.set(http::field::allow, "GET, HEAD");
+            return response;
         }
         const std::string map_id_str{target.substr(kMapsApiPrefix.size())};
         const model::Map::Id map_id{map_id_str};
