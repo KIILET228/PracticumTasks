@@ -7,7 +7,7 @@ RUN sed -i '/bullseye-security/d' /etc/apt/sources.list && \
       python3-pip \
       cmake \
     && \
-    pip3 install conan==1.53.0
+    pip3 install conan==1.60.2
 
 COPY conanfile.txt /app/
 RUN mkdir /app/build && cd /app/build && \
