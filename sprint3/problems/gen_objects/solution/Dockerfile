@@ -21,6 +21,7 @@ RUN mkdir -p build && cd build && \
 
 COPY CMakeLists.txt .
 COPY src/ ./src/
+COPY tests/ ./tests/
 
 RUN cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release && \
