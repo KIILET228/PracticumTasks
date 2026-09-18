@@ -25,6 +25,9 @@ add_executable(game_server
 	src/model.h
 	src/model.cpp
 	src/tagged.h
+	src/geom.h
+	src/collision_detector.h
+	src/collision_detector.cpp
 	src/boost_json.cpp
 	src/json_loader.h
 	src/json_loader.cpp
@@ -49,6 +52,9 @@ add_executable(game_server_tests
 	src/model.h
 	src/model.cpp
 	src/tagged.h
+	src/geom.h
+	src/collision_detector.h
+	src/collision_detector.cpp
 	src/loot_generator.h
 	src/loot_generator.cpp
 	tests/loot_generator_tests.cpp
