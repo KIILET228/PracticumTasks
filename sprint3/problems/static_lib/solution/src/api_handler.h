@@ -12,6 +12,8 @@ namespace http_handler {
 namespace beast = boost::beast;
 namespace http = beast::http;
 
+// 1
+
 using StringRequest = http::request<http::string_body>;
 using StringResponse = http::response<http::string_body>;
 
