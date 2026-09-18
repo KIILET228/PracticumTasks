@@ -1,5 +1,5 @@
 #include "app.h"
-
+//
 namespace app {
 
 JoinGameResult Application::JoinGame(const std::string& user_name, const std::string& map_id_str) {
