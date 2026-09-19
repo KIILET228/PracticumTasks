@@ -2,6 +2,8 @@
 
 namespace app {
 
+// 1
+
 JoinGameResult Application::JoinGame(const std::string& user_name, const std::string& map_id_str) {
     if (user_name.empty()) {
         throw ApplicationError("invalidArgument", "Invalid name");
