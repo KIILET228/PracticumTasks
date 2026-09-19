@@ -5,6 +5,8 @@
 #include "extra_data.h"
 #include "model.h"
 
+// 1
+
 namespace json_loader {
 
 struct GameData {
