@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <system_error>
 #include <unordered_map>
@@ -35,7 +36,7 @@ std::string UrlDecode(std::string_view sv) {
         if (sv[i] == '%' && i + 2 < sv.size()) {
             const std::string hex{sv.substr(i + 1, 2)};
             char* end = nullptr;
-            const long value = std::strtol(hex.c_str(), &end, 16);
+            const std::int64_t value = std::strtoll(hex.c_str(), &end, 16);
             if (end == hex.c_str() + hex.size()) {
                 result += static_cast<char>(value);
                 i += 2;

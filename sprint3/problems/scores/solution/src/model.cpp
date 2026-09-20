@@ -3,6 +3,7 @@
 #include "collision_detector.h"
 
 #include <algorithm>
+#include <numeric>
 #include <random>
 #include <stdexcept>
 
@@ -250,10 +251,11 @@ void GameSession::GatherItems(const std::vector<Position>& start_positions,
         } else {
             // Столкновение с базой - начисляем очки за предметы в рюкзаке
             // и сдаём их все.
-            unsigned points = 0;
-            for (const auto& bag_item : dog.GetBag()) {
-                points += map_.GetLootValue(bag_item.type);
-            }
+            const auto& bag = dog.GetBag();
+            const unsigned points = std::accumulate(
+                bag.begin(), bag.end(), 0u, [this](unsigned sum, const BagItem& bag_item) {
+                    return sum + map_.GetLootValue(bag_item.type);
+                });
             dog.AddScore(points);
             dog.ClearBag();
         }

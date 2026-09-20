@@ -80,7 +80,8 @@ model::Office ParseOffice(const json::object& obj) {
 
 model::Map ParseMap(const json::object& obj, double default_dog_speed, unsigned default_bag_capacity,
                     extra_data::LootTypesInfo& loot_types_info) {
-    model::Map::Id id{std::string(obj.at("id").as_string())};
+    std::string id_str{obj.at("id").as_string()};
+    model::Map::Id id{id_str};
     std::string name{obj.at("name").as_string()};
     model::Map map(std::move(id), std::move(name));
 
@@ -127,7 +128,7 @@ model::Map ParseMap(const json::object& obj, double default_dog_speed, unsigned 
 
         loot_types_info.Add(map.GetId(), loot_types_array);
     } catch (const std::exception& ex) {
-        throw std::runtime_error("Failed to parse map \""s + *id + "\": "s + ex.what());
+        throw std::runtime_error("Failed to parse map \""s + id_str + "\": "s + ex.what());
     }
 
     return map;
