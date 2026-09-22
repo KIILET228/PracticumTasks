@@ -1,7 +1,6 @@
 #include "book_manager.h"
 
 #include <optional>
-#include <string_view>
 
 namespace db {
 
@@ -13,7 +12,7 @@ namespace {
 constexpr auto kAddBookTag = "add_book"_zv;
 
 // Достаёт из payload строковое поле, учитывая, что в JSON оно может быть null.
-std::optional<std::string> GetOptionalString(const boost::json::object& payload, std::string_view key) {
+std::optional<std::string> GetOptionalString(const boost::json::object& payload, boost::json::string_view key) {
     const auto& value = payload.at(key);
     if (value.is_null()) {
         return std::nullopt;
