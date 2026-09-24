@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 
 #include "../util/tagged_uuid.h"
 
@@ -34,6 +35,9 @@ private:
 class AuthorRepository {
 public:
     virtual void Save(const Author& author) = 0;
+
+    // Возвращает всех авторов, отсортированных по имени в порядке возрастания.
+    virtual std::vector<Author> GetAllAuthors() const = 0;
 
 protected:
     ~AuthorRepository() = default;

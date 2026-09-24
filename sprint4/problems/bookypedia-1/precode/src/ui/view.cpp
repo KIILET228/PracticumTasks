@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/trim.hpp>
 #include <cassert>
+#include <cstddef>
 #include <iostream>
 
 #include "../app/use_cases.h"
@@ -56,7 +57,7 @@ bool View::AddAuthor(std::istream& cmd_input) const {
         std::string name;
         std::getline(cmd_input, name);
         boost::algorithm::trim(name);
-        use_cases_.AddAuthor(std::move(name));
+        use_cases_.AddAuthor(name);
     } catch (const std::exception&) {
         output_ << "Failed to add author"sv << std::endl;
     }
@@ -66,7 +67,7 @@ bool View::AddAuthor(std::istream& cmd_input) const {
 bool View::AddBook(std::istream& cmd_input) const {
     try {
         if (auto params = GetBookParams(cmd_input)) {
-            assert(!"TODO: implement book adding");
+            use_cases_.AddBook(params->author_id, params->title, params->publication_year);
         }
     } catch (const std::exception&) {
         output_ << "Failed to add book"sv << std::endl;
@@ -75,7 +76,12 @@ bool View::AddBook(std::istream& cmd_input) const {
 }
 
 bool View::ShowAuthors() const {
-    PrintVector(output_, GetAuthors());
+    // ShowAuthors, в отличие от остальных списков (SelectAuthor, ShowBooks,
+    // ShowAuthorBooks), нумерует пункты в формате "N. Имя" (с точкой).
+    int i = 1;
+    for (const auto& author : GetAuthors()) {
+        output_ << i++ << ". "sv << author.name << std::endl;
+    }
     return true;
 }
 
@@ -85,13 +91,8 @@ bool View::ShowBooks() const {
 }
 
 bool View::ShowAuthorBooks() const {
-    // TODO: handle error
-    try {
-        if (auto author_id = SelectAuthor()) {
-            PrintVector(output_, GetAuthorBooks(*author_id));
-        }
-    } catch (const std::exception&) {
-        throw std::runtime_error("Failed to Show Books");
+    if (auto author_id = SelectAuthor()) {
+        PrintVector(output_, GetAuthorBooks(*author_id));
     }
     return true;
 }
@@ -131,7 +132,7 @@ std::optional<std::string> View::SelectAuthor() const {
     }
 
     --author_idx;
-    if (author_idx < 0 or author_idx >= authors.size()) {
+    if (author_idx < 0 || static_cast<std::size_t>(author_idx) >= authors.size()) {
         throw std::runtime_error("Invalid author num");
     }
 
@@ -139,20 +140,26 @@ std::optional<std::string> View::SelectAuthor() const {
 }
 
 std::vector<detail::AuthorInfo> View::GetAuthors() const {
-    std::vector<detail::AuthorInfo> dst_autors;
-    assert(!"TODO: implement GetAuthors()");
-    return dst_autors;
+    std::vector<detail::AuthorInfo> dst_authors;
+    for (auto& author : use_cases_.GetAuthors()) {
+        dst_authors.push_back({author.id, author.name});
+    }
+    return dst_authors;
 }
 
 std::vector<detail::BookInfo> View::GetBooks() const {
     std::vector<detail::BookInfo> books;
-    assert(!"TODO: implement GetBooks()");
+    for (auto& book : use_cases_.GetBooks()) {
+        books.push_back({book.title, book.publication_year});
+    }
     return books;
 }
 
 std::vector<detail::BookInfo> View::GetAuthorBooks(const std::string& author_id) const {
     std::vector<detail::BookInfo> books;
-    assert(!"TODO: implement GetAuthorBooks()");
+    for (auto& book : use_cases_.GetAuthorBooks(author_id)) {
+        books.push_back({book.title, book.publication_year});
+    }
     return books;
 }
 
