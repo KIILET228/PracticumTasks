@@ -24,6 +24,9 @@ std::vector<AuthorInfo> UseCasesImpl::GetAuthors() {
 }
 
 void UseCasesImpl::AddBook(const std::string& author_id, const std::string& title, int publication_year) {
+    if (title.empty()) {
+        throw std::invalid_argument("Book title is empty");
+    }
     books_.Save({BookId::New(), AuthorId::FromString(author_id), title, publication_year});
 }
 

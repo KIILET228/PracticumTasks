@@ -26,11 +26,22 @@ std::ostream& operator<<(std::ostream& out, const BookInfo& book) {
 
 }  // namespace detail
 
+// Используется для вывода списков "N значение" (выбор автора, список книг).
 template <typename T>
 void PrintVector(std::ostream& out, const std::vector<T>& vector) {
     int i = 1;
     for (auto& value : vector) {
         out << i++ << " " << value << std::endl;
+    }
+}
+
+// Используется для вывода нумерованного списка авторов командой ShowAuthors:
+// формат "N. значение" (с точкой после номера).
+template <typename T>
+void PrintNumberedList(std::ostream& out, const std::vector<T>& vector) {
+    int i = 1;
+    for (auto& value : vector) {
+        out << i++ << ". " << value << std::endl;
     }
 }
 
@@ -76,12 +87,9 @@ bool View::AddBook(std::istream& cmd_input) const {
 }
 
 bool View::ShowAuthors() const {
-    // ShowAuthors, в отличие от остальных списков (SelectAuthor, ShowBooks,
-    // ShowAuthorBooks), нумерует пункты в формате "N. Имя" (с точкой).
-    int i = 1;
-    for (const auto& author : GetAuthors()) {
-        output_ << i++ << ". "sv << author.name << std::endl;
-    }
+    // ShowAuthors выводит список в формате "N. Имя" (с точкой), в отличие
+    // от списка авторов для выбора в AddBook/ShowAuthorBooks ("N Имя").
+    PrintNumberedList(output_, GetAuthors());
     return true;
 }
 
@@ -91,8 +99,12 @@ bool View::ShowBooks() const {
 }
 
 bool View::ShowAuthorBooks() const {
-    if (auto author_id = SelectAuthor()) {
-        PrintVector(output_, GetAuthorBooks(*author_id));
+    try {
+        if (auto author_id = SelectAuthor()) {
+            PrintVector(output_, GetAuthorBooks(*author_id));
+        }
+    } catch (const std::exception&) {
+        // Некорректный номер автора - ничего не выводим, просто игнорируем команду.
     }
     return true;
 }

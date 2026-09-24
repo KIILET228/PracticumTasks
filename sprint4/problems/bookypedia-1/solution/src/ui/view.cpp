@@ -76,12 +76,7 @@ bool View::AddBook(std::istream& cmd_input) const {
 }
 
 bool View::ShowAuthors() const {
-    // ShowAuthors, в отличие от остальных списков (SelectAuthor, ShowBooks,
-    // ShowAuthorBooks), нумерует пункты в формате "N. Имя" (с точкой).
-    int i = 1;
-    for (const auto& author : GetAuthors()) {
-        output_ << i++ << ". "sv << author.name << std::endl;
-    }
+    PrintVector(output_, GetAuthors());
     return true;
 }
 
