@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,13 +49,24 @@ private:
 class BookRepository {
 public:
     virtual void Save(const Book& book) = 0;
+    virtual void Delete(const BookId& id) = 0;
+    virtual void UpdateTitleAndYear(const BookId& id, const std::string& title, int year) = 0;
 
-    // Возвращает все книги, отсортированные по названию в порядке возрастания.
+    // Полностью заменяет набор тегов книги (удаляет старые, вставляет новые).
+    virtual void SetTags(const BookId& id, const std::vector<std::string>& tags) = 0;
+    // Возвращает теги книги, отсортированные по возрастанию.
+    virtual std::vector<std::string> GetTags(const BookId& id) const = 0;
+
     virtual std::vector<Book> GetAllBooks() const = 0;
 
     // Возвращает книги указанного автора, отсортированные по году издания,
     // а при совпадении года - по названию (обе сортировки по возрастанию).
     virtual std::vector<Book> GetAuthorBooks(const AuthorId& author_id) const = 0;
+
+    // Возвращает все книги с точным совпадением названия (регистрозависимо).
+    virtual std::vector<Book> FindByTitle(const std::string& title) const = 0;
+
+    virtual std::optional<Book> GetById(const BookId& id) const = 0;
 
 protected:
     ~BookRepository() = default;

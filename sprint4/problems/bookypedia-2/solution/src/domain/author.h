@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,9 +36,13 @@ private:
 class AuthorRepository {
 public:
     virtual void Save(const Author& author) = 0;
+    virtual void Delete(const AuthorId& id) = 0;
 
     // Возвращает всех авторов, отсортированных по имени в порядке возрастания.
     virtual std::vector<Author> GetAllAuthors() const = 0;
+
+    virtual std::optional<Author> GetByName(const std::string& name) const = 0;
+    virtual std::optional<Author> GetById(const AuthorId& id) const = 0;
 
 protected:
     ~AuthorRepository() = default;

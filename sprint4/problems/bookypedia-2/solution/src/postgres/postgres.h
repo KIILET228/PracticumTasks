@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <pqxx/connection>
 #include <pqxx/transaction>
 
@@ -14,7 +15,10 @@ public:
     }
 
     void Save(const domain::Author& author) override;
+    void Delete(const domain::AuthorId& id) override;
     std::vector<domain::Author> GetAllAuthors() const override;
+    std::optional<domain::Author> GetByName(const std::string& name) const override;
+    std::optional<domain::Author> GetById(const domain::AuthorId& id) const override;
 
 private:
     pqxx::connection& connection_;
@@ -27,8 +31,14 @@ public:
     }
 
     void Save(const domain::Book& book) override;
+    void Delete(const domain::BookId& id) override;
+    void UpdateTitleAndYear(const domain::BookId& id, const std::string& title, int year) override;
+    void SetTags(const domain::BookId& id, const std::vector<std::string>& tags) override;
+    std::vector<std::string> GetTags(const domain::BookId& id) const override;
     std::vector<domain::Book> GetAllBooks() const override;
     std::vector<domain::Book> GetAuthorBooks(const domain::AuthorId& author_id) const override;
+    std::vector<domain::Book> FindByTitle(const std::string& title) const override;
+    std::optional<domain::Book> GetById(const domain::BookId& id) const override;
 
 private:
     pqxx::connection& connection_;
