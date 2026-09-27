@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <algorithm>
+
 namespace app {
 
 JoinGameResult Application::JoinGame(const std::string& user_name, const std::string& map_id_str) {
@@ -21,13 +23,12 @@ JoinGameResult Application::JoinGame(const std::string& user_name, const std::st
 
 std::map<std::uint64_t, PlayerInfo> Application::GetPlayers(const Token& token) const {
     const Player* player = players_.FindByToken(token);
-    if (!player) {
+    if (!player || player->IsRetired()) {
         throw ApplicationError("unknownToken", "Player token has not been found");
     }
 
     std::map<std::uint64_t, PlayerInfo> result;
     for (const auto& dog : player->GetSession().GetDogs()) {
-        if (dog.IsRetired()) continue;
         result.emplace(*dog.GetId(), PlayerInfo{dog.GetName()});
     }
     return result;
@@ -35,13 +36,12 @@ std::map<std::uint64_t, PlayerInfo> Application::GetPlayers(const Token& token) 
 
 GameStateResult Application::GetGameState(const Token& token) const {
     const Player* player = players_.FindByToken(token);
-    if (!player) {
+    if (!player || player->IsRetired()) {
         throw ApplicationError("unknownToken", "Player token has not been found");
     }
 
     GameStateResult result;
     for (const auto& dog : player->GetSession().GetDogs()) {
-        if (dog.IsRetired()) continue;
         std::vector<BagItemInfo> bag;
         bag.reserve(dog.GetBag().size());
         for (const auto& bag_item : dog.GetBag()) {
@@ -49,25 +49,31 @@ GameStateResult Application::GetGameState(const Token& token) const {
         }
         result.players.emplace(
             *dog.GetId(),
-            PlayerState{dog.GetPosition(), dog.GetSpeed(), dog.GetDirection(), std::move(bag), dog.GetScore()});
+            PlayerState{dog.GetPosition(), dog.GetSpeed(), dog.GetDirection(),
+                        std::move(bag), dog.GetScore()});
     }
     for (const auto& lost_object : player->GetSession().GetLostObjects()) {
         result.lost_objects.emplace(*lost_object.GetId(),
-                                    LostObjectState{lost_object.GetType(), lost_object.GetPosition()});
+                                    LostObjectState{lost_object.GetType(),
+                                                    lost_object.GetPosition()});
     }
     return result;
 }
 
 void Application::SetPlayerAction(const Token& token, const std::string& move) {
-    // Нужен неконстантный доступ, чтобы сбрасывать idle_time при реальном движении.
-    Player* player = nullptr;
-    for (auto& p : players_.GetAll()) {
-        if (p.GetToken() == token && !p.IsRetired()) {
-            player = &p;
-            break;
-        }
-    }
+    Player* player = players_.FindByTokenMutable(token);
     if (!player) {
+        throw ApplicationError("unknownToken", "Player token has not been found");
+    }
+
+    // Если игрок уже вышел на пенсию:
+    //   - пустой move (стоп) разрешаем как no-op (нужно для tribe.stop()
+    //     в тестах, где часть игроков могла выйти на пенсию раньше);
+    //   - любой другой move отвергаем как неизвестный токен.
+    if (player->IsRetired()) {
+        if (move.empty()) {
+            return;
+        }
         throw ApplicationError("unknownToken", "Player token has not been found");
     }
 
@@ -107,7 +113,9 @@ void Application::Tick(std::chrono::milliseconds delta) {
 
     std::vector<Player*> to_retire;
     for (auto& player : players_.GetAll()) {
-        if (player.IsRetired()) continue;
+        if (player.IsRetired()) {
+            continue;
+        }
         player.Tick(delta);
         if (player.GetIdleTime() >= retirement_time) {
             to_retire.push_back(&player);
@@ -130,9 +138,12 @@ std::vector<PlayerRecord> Application::GetRecords(size_t start, size_t max_items
                      [](const PlayerRecord& a, const PlayerRecord& b) {
                          return a.score > b.score;
                      });
-    if (start >= sorted.size()) return {};
+
+    if (start >= sorted.size()) {
+        return {};
+    }
     const size_t end = std::min(start + max_items, sorted.size());
     return {sorted.begin() + start, sorted.begin() + end};
 }
 
-}
+}  // namespace app

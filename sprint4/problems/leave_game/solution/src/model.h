@@ -353,7 +353,6 @@ public:
     }
 
     bool IsRetired() const noexcept { return retired_; }
-
     void SetRetired() noexcept { retired_ = true; }
 
 private:

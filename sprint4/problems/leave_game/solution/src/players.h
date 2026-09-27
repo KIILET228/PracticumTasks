@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <deque>
 #include <random>
 #include <string>
@@ -56,6 +57,7 @@ public:
     bool IsRetired() const noexcept { return retired_; }
     void Retire() noexcept {
         retired_ = true;
+        dog_.SetSpeed(model::Speed{0.0, 0.0});
         dog_.SetRetired();
     }
 
@@ -71,9 +73,11 @@ private:
 class Players {
 public:
     Player& Add(model::Dog& dog, model::GameSession& session);
-    const Player* FindByToken(const Token& token) const;
 
-    // Только не вышедшие на пенсию игроки
+    // Возвращает игрока независимо от того, вышел он на пенсию или нет.
+    const Player* FindByToken(const Token& token) const;
+    Player* FindByTokenMutable(const Token& token);
+
     std::deque<Player>& GetAll() noexcept { return players_; }
     const std::deque<Player>& GetAll() const noexcept { return players_; }
 
@@ -83,4 +87,4 @@ private:
     std::unordered_map<Token, Player*, util::TaggedHasher<Token>> token_to_player_;
 };
 
-}
+}  // namespace app

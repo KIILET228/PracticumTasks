@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -35,12 +36,6 @@ struct PlayerInfo {
     std::string name;
 };
 
-struct PlayerRecord {
-    std::string name;
-    unsigned score;
-    double play_time_seconds;
-};
-
 // Предмет в рюкзаке игрока, как он должен попасть в ответ на
 // /api/v1/game/state. id и type - те же, что были у предмета до подбора.
 struct BagItemInfo {
@@ -66,6 +61,13 @@ struct GameStateResult {
     std::map<std::uint64_t, LostObjectState> lost_objects;
 };
 
+// Запись в таблице рекордов: игрок, вышедший на пенсию.
+struct PlayerRecord {
+    std::string name;
+    unsigned score;
+    double play_time_seconds;
+};
+
 class Application {
 public:
     explicit Application(model::Game& game) noexcept
@@ -89,6 +91,8 @@ public:
 
     void Tick(std::chrono::milliseconds delta);
 
+    // Возвращает срез таблицы рекордов [start, start + max_items),
+    // отсортированный по убыванию score.
     std::vector<PlayerRecord> GetRecords(size_t start, size_t max_items) const;
 
 private:
@@ -97,4 +101,4 @@ private:
     std::vector<PlayerRecord> records_;
 };
 
-}
+}  // namespace app

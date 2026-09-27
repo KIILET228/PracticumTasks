@@ -21,11 +21,16 @@ Player& Players::Add(model::Dog& dog, model::GameSession& session) {
 
 const Player* Players::FindByToken(const Token& token) const {
     if (auto it = token_to_player_.find(token); it != token_to_player_.end()) {
-        if (!it->second->IsRetired()) {
-            return it->second;
-        }
+        return it->second;
     }
     return nullptr;
 }
 
+Player* Players::FindByTokenMutable(const Token& token) {
+    if (auto it = token_to_player_.find(token); it != token_to_player_.end()) {
+        return it->second;
+    }
+    return nullptr;
 }
+
+}  // namespace app
