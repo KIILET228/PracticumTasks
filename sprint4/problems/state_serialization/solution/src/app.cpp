@@ -29,7 +29,8 @@ std::map<std::uint64_t, PlayerInfo> Application::GetPlayers(const Token& token) 
 
     std::map<std::uint64_t, PlayerInfo> result;
     for (const auto& dog : player->GetSession().GetDogs()) {
-        result.emplace(*dog.GetId(), PlayerInfo{dog.GetName()});
+        // dog — это std::shared_ptr<model::Dog>, обращаемся через ->
+        result.emplace(*dog->GetId(), PlayerInfo{dog->GetName()});
     }
     return result;
 }
@@ -41,22 +42,30 @@ GameStateResult Application::GetGameState(const Token& token) const {
     }
 
     GameStateResult result;
+
     for (const auto& dog : player->GetSession().GetDogs()) {
         std::vector<BagItemInfo> bag;
-        bag.reserve(dog.GetBag().size());
-        for (const auto& bag_item : dog.GetBag()) {
+        bag.reserve(dog->GetBag().size());
+        for (const auto& bag_item : dog->GetBag()) {
             bag.push_back(BagItemInfo{*bag_item.id, bag_item.type});
         }
+
         result.players.emplace(
-            *dog.GetId(),
-            PlayerState{dog.GetPosition(), dog.GetSpeed(), dog.GetDirection(),
-                        std::move(bag), dog.GetScore()});
+            *dog->GetId(),
+            PlayerState{
+                dog->GetPosition(),
+                dog->GetSpeed(),
+                dog->GetDirection(),
+                std::move(bag),
+                dog->GetScore()});
     }
-    for (const auto& lost_object : player->GetSession().GetLostObjects()) {
-        result.lost_objects.emplace(*lost_object.GetId(),
-                                    LostObjectState{lost_object.GetType(),
-                                                    lost_object.GetPosition()});
+
+    for (const auto& [lost_id, lost_object] : player->GetSession().GetLostObjects()) {
+        result.lost_objects.emplace(
+            *lost_object.GetId(),
+            LostObjectState{lost_object.GetType(), lost_object.GetPosition()});
     }
+
     return result;
 }
 
@@ -148,9 +157,7 @@ void Application::RestorePlayer(Token token,
                                 std::chrono::milliseconds total_time,
                                 std::chrono::milliseconds idle_time,
                                 bool retired) {
-    Player& player = players_.AddRestored(std::move(token), dog, session, total_time, idle_time, retired);
-    // Чтобы избежать предупреждений о неиспользуемой переменной player.
-    (void)player;
+    players_.AddRestored(std::move(token), dog, session, total_time, idle_time, retired);
 }
 
 }  // namespace app

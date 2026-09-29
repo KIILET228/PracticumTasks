@@ -1,6 +1,7 @@
 #include "model.h"
 
 #include <algorithm>
+#include <cmath>
 #include <random>
 
 namespace model {
@@ -17,7 +18,7 @@ void GameSession::Tick(std::chrono::milliseconds delta) {
         dog->SetPosition(geom::Point2D{pos.x + sp.x * dt, pos.y + sp.y * dt});
     }
 
-    // 2. Подбор потерянных объектов (простая проверка на расстояние <= 0.5).
+    // 2. Подбор потерянных объектов (расстояние <= 0.5).
     constexpr double kCollectRadiusSq = 0.25;
     for (auto& dog_ptr : dogs_) {
         auto& dog = *dog_ptr;
@@ -31,9 +32,11 @@ void GameSession::Tick(std::chrono::milliseconds delta) {
             const double dy = lo_pos.y - dog_pos.y;
 
             if (dx * dx + dy * dy <= kCollectRadiusSq) {
-                dog.PutToBag(FoundObject{
+                // Явно приводим к void, чтобы подавить -Wunused-result
+                // от [[nodiscard]] на PutToBag.
+                static_cast<void>(dog.PutToBag(FoundObject{
                     FoundObject::Id{*lo.GetId()},
-                    lo.GetType()});
+                    lo.GetType()}));
                 it = lost_objects_.erase(it);
                 if (dog.IsBagFull()) break;
             } else {
@@ -42,9 +45,7 @@ void GameSession::Tick(std::chrono::milliseconds delta) {
         }
     }
 
-    // 3. Генерация новых потерянных объектов (детерминированный генератор
-    //    используется только для случайности типа; для тестов это неважно).
-    //    Период/вероятность берём из конфигурации сессии.
+    // 3. Генерация новых потерянных объектов.
     static std::mt19937 rng{42};
     static std::chrono::milliseconds time_without_loot{0};
     time_without_loot += delta;
@@ -69,8 +70,12 @@ void GameSession::Tick(std::chrono::milliseconds delta) {
 
                 LostObject lo{
                     LostObject::Id{next_loot_id_++},
-                    static_cast<LostObjectType>(next_loot_id_ % map_.GetLootTypesCount()),
-                    geom::Point2D{static_cast<double>(p2.x), static_cast<double>(p2.y)}};
+                    static_cast<LostObjectType>(
+                        map_.GetLootTypesCount() == 0
+                            ? 0
+                            : (next_loot_id_ % map_.GetLootTypesCount())),
+                    geom::Point2D{static_cast<double>(p2.x),
+                                  static_cast<double>(p2.y)}};
                 lost_objects_.emplace(lo.GetId(), std::move(lo));
             }
         }
