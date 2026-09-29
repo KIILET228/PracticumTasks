@@ -38,8 +38,10 @@ add_executable(game_server
 
 target_link_libraries(game_server PRIVATE game_model CONAN_PKG::boost Threads::Threads)
 
-add_executable(game_server_tests
-	tests/state-serialization-tests.cpp
-)
-
-target_link_libraries(game_server_tests CONAN_PKG::catch2 game_model)
+# Тесты собираются только если файл тестов присутствует в дереве исходников.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/state-serialization-tests.cpp")
+	add_executable(game_server_tests
+		tests/state-serialization-tests.cpp
+	)
+	target_link_libraries(game_server_tests CONAN_PKG::catch2 game_model)
+endif()
