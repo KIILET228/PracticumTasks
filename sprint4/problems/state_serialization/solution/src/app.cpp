@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "logger.h"
+
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/archive/text_oarchive.hpp>
 #include <algorithm>
@@ -93,8 +95,28 @@ void Application::SetPlayerAction(const Token& token, const std::string& move) {
     }
 }
 
+void Application::EnableAutosave(std::filesystem::path path, std::chrono::milliseconds period) {
+    autosave_path_ = std::move(path);
+    autosave_period_ = period;
+    since_last_save_ = std::chrono::milliseconds{0};
+}
+
 void Application::Tick(std::chrono::milliseconds delta) {
     game_.Tick(delta);
+
+    if (!autosave_path_) {
+        return;
+    }
+    since_last_save_ += delta;
+    if (since_last_save_ < autosave_period_) {
+        return;
+    }
+    since_last_save_ = std::chrono::milliseconds{0};
+    try {
+        SaveState(*autosave_path_);
+    } catch (const std::exception& ex) {
+        server_logging::LogError(0, ex.what(), "AutosaveState"sv);
+    }
 }
 
 namespace {

@@ -42,15 +42,12 @@ public:
         })->Start();
     }
 
-    // Периодически (раз в period реального времени) сохраняет состояние игры
-    // в state_file. Выполняется на том же strand'е, что и обработка API и
-    // игровые тики, поэтому не может пересечься с ними по данным.
+    // Включает автосохранение состояния игры в state_file каждые period
+    // игрового времени (срабатывает сразу после тика - ручного или
+    // автоматического). Тики выполняются на api_strand_, поэтому сохранение не
+    // пересекается с обработкой API по данным. Вызывать до запуска ioc.run().
     void EnablePeriodicStateSaving(std::chrono::milliseconds period, fs::path state_file) {
-        std::make_shared<Ticker>(api_strand_, period,
-                                 [this, state_file = std::move(state_file)](std::chrono::milliseconds) {
-                                     api_handler_.GetApplication().SaveState(state_file);
-                                 })
-            ->Start();
+        api_handler_.GetApplication().EnableAutosave(std::move(state_file), period);
     }
 
     app::Application& GetApplication() noexcept {

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -94,9 +95,19 @@ public:
     // ни одной сессии/игрока.
     void LoadState(const std::filesystem::path& path);
 
+    // Включает автосохранение: состояние сохраняется в path каждый раз, когда
+    // накопленное игровое время (сумма delta всех тиков - и ручных через API,
+    // и автоматических) достигает period. Все тики проходят через Tick(),
+    // поэтому сохранение происходит сразу после тика, не завися от
+    // реального времени.
+    void EnableAutosave(std::filesystem::path path, std::chrono::milliseconds period);
+
 private:
     model::Game& game_;
     Players players_;
+    std::optional<std::filesystem::path> autosave_path_;
+    std::chrono::milliseconds autosave_period_{0};
+    std::chrono::milliseconds since_last_save_{0};
 };
 
 }
