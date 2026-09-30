@@ -19,14 +19,8 @@ Player& Players::Add(model::Dog& dog, model::GameSession& session) {
     return player;
 }
 
-Player& Players::AddRestored(Token token,
-                             model::Dog& dog,
-                             model::GameSession& session,
-                             std::chrono::milliseconds total_time,
-                             std::chrono::milliseconds idle_time,
-                             bool retired) {
+Player& Players::AddWithToken(Token token, model::Dog& dog, model::GameSession& session) {
     Player& player = players_.emplace_back(std::move(token), dog, session);
-    player.RestoreTimers(total_time, idle_time, retired);
     token_to_player_.emplace(player.GetToken(), &player);
     return player;
 }
@@ -38,11 +32,14 @@ const Player* Players::FindByToken(const Token& token) const {
     return nullptr;
 }
 
-Player* Players::FindByTokenMutable(const Token& token) {
-    if (auto it = token_to_player_.find(token); it != token_to_player_.end()) {
-        return it->second;
+std::vector<PlayerRecordForSave> Players::GetAllForSerialization() const {
+    std::vector<PlayerRecordForSave> result;
+    result.reserve(players_.size());
+    for (const auto& player : players_) {
+        result.push_back(PlayerRecordForSave{*player.GetToken(), player.GetId(),
+                                             *player.GetSession().GetMap().GetId()});
     }
-    return nullptr;
+    return result;
 }
 
-}  // namespace app
+}

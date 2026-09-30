@@ -153,13 +153,6 @@ GameData LoadGame(const std::filesystem::path& json_path) {
             default_bag_capacity = ToUnsigned(*default_bag_capacity_value);
         }
 
-        double dog_retirement_time_s = 60.0;
-        if (const auto* dog_retirement_time_value = root.if_contains("dogRetirementTime")) {
-            dog_retirement_time_s = ToDouble(*dog_retirement_time_value);
-        }
-        game_data.game.SetDogRetirementTime(
-            std::chrono::milliseconds(static_cast<std::int64_t>(dog_retirement_time_s * 1000)));
-
         for (const auto& map_value : root.at("maps").as_array()) {
             game_data.game.AddMap(
                 ParseMap(map_value.as_object(), default_dog_speed, default_bag_capacity, game_data.loot_types_info));

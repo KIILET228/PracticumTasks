@@ -31,11 +31,9 @@ public:
 
     void Tick(std::chrono::milliseconds delta);
 
-    StringResponse HandleRecords(const StringRequest& req) const;
-
-    // Доступ к Application для сохранения/загрузки состояния.
-    app::Application& GetApplication() noexcept { return application_; }
-    const app::Application& GetApplication() const noexcept { return application_; }
+    app::Application& GetApplication() noexcept {
+        return application_;
+    }
 
 private:
     app::Application application_;

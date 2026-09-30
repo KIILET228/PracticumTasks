@@ -20,7 +20,6 @@ constexpr std::string_view kGamePlayers = "/api/v1/game/players"sv;
 constexpr std::string_view kGameState = "/api/v1/game/state"sv;
 constexpr std::string_view kGameAction = "/api/v1/game/player/action"sv;
 constexpr std::string_view kGameTick = "/api/v1/game/tick"sv;
-constexpr std::string_view kGameRecords = "/api/v1/game/records"sv;
 constexpr std::string_view kMapsApi = "/api/v1/maps"sv;
 constexpr std::string_view kMapsApiPrefix = "/api/v1/maps/"sv;
 constexpr boost::beast::string_view kContentTypeJson = "application/json";
@@ -176,60 +175,29 @@ StringResponse MakeInvalidEndpointResponse(unsigned version, bool keep_alive, bo
                              include_body);
 }
 
-// Разбирает query-параметр с целочисленным значением (start / maxItems).
-size_t ParseSizeParam(std::string_view query, std::string_view name, size_t default_value) {
-    size_t pos = 0;
-    while (pos < query.size()) {
-        auto amp = query.find('&', pos);
-        if (amp == std::string_view::npos) {
-            amp = query.size();
-        }
-        const std::string_view pair = query.substr(pos, amp - pos);
-        const auto eq = pair.find('=');
-        if (eq != std::string_view::npos && pair.substr(0, eq) == name) {
-            try {
-                return static_cast<size_t>(std::stoull(std::string(pair.substr(eq + 1))));
-            } catch (...) {
-                return default_value;
-            }
-        }
-        pos = amp + 1;
-    }
-    return default_value;
 }
-
-}  // namespace
 
 StringResponse ApiHandler::HandleApiRequest(const StringRequest& req) {
     const auto target_bsv = req.target();
     const std::string_view target(target_bsv.data(), target_bsv.size());
 
-    // Путь без query-строки — используется для маршрутизации.
-    const auto query_pos = target.find('?');
-    const std::string_view path = (query_pos == std::string_view::npos)
-                                      ? target
-                                      : target.substr(0, query_pos);
-
-    if (path == kGameJoin) {
+    if (target == kGameJoin) {
         return HandleJoin(req);
     }
-    if (path == kGamePlayers) {
+    if (target == kGamePlayers) {
         return HandlePlayers(req);
     }
-    if (path == kGameState) {
+    if (target == kGameState) {
         return HandleState(req);
     }
-    if (path == kGameAction) {
+    if (target == kGameAction) {
         return HandleAction(req);
     }
-    if (path == kGameTick) {
+    if (target == kGameTick) {
         if (!tick_endpoint_enabled_) {
             return MakeInvalidEndpointResponse(req.version(), req.keep_alive(), true);
         }
         return HandleTick(req);
-    }
-    if (path == kGameRecords) {
-        return HandleRecords(req);
     }
     return HandleMapsApi(req.method(), target, req.version(), req.keep_alive());
 }
@@ -458,43 +426,6 @@ StringResponse ApiHandler::HandleTick(const StringRequest& req) {
     return MakeJsonResponse(http::status::ok, json::object{}, version, keep_alive, true);
 }
 
-StringResponse ApiHandler::HandleRecords(const StringRequest& req) const {
-    const unsigned version = req.version();
-    const bool keep_alive = req.keep_alive();
-
-    if (req.method() != http::verb::get && req.method() != http::verb::head) {
-        StringResponse response = MakeErrorResponse(http::status::method_not_allowed, "invalidMethod"sv,
-                                                     "Invalid method"sv, version, keep_alive, true);
-        response.set(http::field::allow, "GET, HEAD");
-        return response;
-    }
-
-    const bool include_body = (req.method() != http::verb::head);
-
-    const auto target_bsv = req.target();
-    const std::string_view target(target_bsv.data(), target_bsv.size());
-    const auto query_pos = target.find('?');
-    const std::string_view query = (query_pos == std::string_view::npos)
-                                       ? std::string_view{}
-                                       : target.substr(query_pos + 1);
-
-    const size_t start = ParseSizeParam(query, "start", 0);
-    const size_t max_items = ParseSizeParam(query, "maxItems", 100);
-
-    const auto records = application_.GetRecords(start, max_items);
-
-    json::array arr;
-    for (const auto& record : records) {
-        json::object obj;
-        obj["name"] = record.name;
-        obj["score"] = record.score;
-        obj["playTime"] = record.play_time_seconds;
-        arr.push_back(std::move(obj));
-    }
-
-    return MakeJsonResponse(http::status::ok, arr, version, keep_alive, include_body);
-}
-
 StringResponse ApiHandler::HandleMapsApi(http::verb method, std::string_view target, unsigned version,
                                          bool keep_alive) const {
     const bool include_body = (method != http::verb::head);
@@ -534,4 +465,4 @@ StringResponse ApiHandler::HandleMapsApi(http::verb method, std::string_view tar
     return MakeInvalidEndpointResponse(version, keep_alive, include_body);
 }
 
-}  // namespace http_handler
+}

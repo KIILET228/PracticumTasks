@@ -6,6 +6,7 @@
 
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/asio/strand.hpp>
 
 #include <chrono>
@@ -41,9 +42,33 @@ public:
         })->Start();
     }
 
-    // Доступ к ApiHandler для сохранения/загрузки состояния.
-    ApiHandler& GetApiHandler() noexcept { return api_handler_; }
-    const ApiHandler& GetApiHandler() const noexcept { return api_handler_; }
+    // Периодически (раз в period реального времени) сохраняет состояние игры
+    // в state_file. Выполняется на том же strand'е, что и обработка API и
+    // игровые тики, поэтому не может пересечься с ними по данным.
+    void EnablePeriodicStateSaving(std::chrono::milliseconds period, fs::path state_file) {
+        std::make_shared<Ticker>(api_strand_, period,
+                                 [this, state_file = std::move(state_file)](std::chrono::milliseconds) {
+                                     api_handler_.GetApplication().SaveState(state_file);
+                                 })
+            ->Start();
+    }
+
+    app::Application& GetApplication() noexcept {
+        return api_handler_.GetApplication();
+    }
+
+    void SaveState(const fs::path& state_file) {
+        api_handler_.GetApplication().SaveState(state_file);
+    }
+
+    // Ставит произвольную функцию в очередь того же strand'а, на котором
+    // обрабатываются API-запросы и игровые тики - гарантирует отсутствие
+    // гонок с ними. Используется, например, для сохранения состояния при
+    // получении сигнала завершения работы.
+    template <typename Fn>
+    void PostOnApiStrand(Fn&& fn) {
+        net::post(api_strand_, std::forward<Fn>(fn));
+    }
 
     template <typename Send>
     void operator()(StringRequest&& req, Send&& send) {
@@ -51,6 +76,7 @@ public:
         const std::string_view target_sv(target.data(), target.size());
 
         if (target_sv.starts_with(kApiPrefix)) {
+
             net::dispatch(api_strand_, [this, req = std::move(req), send = std::forward<Send>(send)]() mutable {
                 send(api_handler_.HandleApiRequest(req));
             });

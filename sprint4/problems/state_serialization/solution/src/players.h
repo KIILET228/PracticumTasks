@@ -1,9 +1,10 @@
 #pragma once
-#include <chrono>
+#include <cstdint>
 #include <deque>
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "model.h"
 #include "tagged.h"
@@ -40,68 +41,49 @@ public:
         , session_(session) {
     }
 
-    const Token& GetToken() const noexcept { return token_; }
-    std::uint64_t GetId() const noexcept { return *dog_.GetId(); }
-    model::Dog& GetDog() const noexcept { return dog_; }
-    model::GameSession& GetSession() const noexcept { return session_; }
-
-    void Tick(std::chrono::milliseconds delta) noexcept {
-        total_time_ += delta;
-        idle_time_ += delta;
-    }
-    void ResetIdle() noexcept { idle_time_ = std::chrono::milliseconds::zero(); }
-
-    std::chrono::milliseconds GetIdleTime() const noexcept { return idle_time_; }
-    std::chrono::milliseconds GetTotalTime() const noexcept { return total_time_; }
-
-    bool IsRetired() const noexcept { return retired_; }
-    void Retire() noexcept {
-        retired_ = true;
-        dog_.SetSpeed(model::Speed{0.0, 0.0});
-        dog_.SetRetired();
+    const Token& GetToken() const noexcept {
+        return token_;
     }
 
-    // Используется при восстановлении состояния из файла.
-    void RestoreTimers(std::chrono::milliseconds total_time,
-                       std::chrono::milliseconds idle_time,
-                       bool retired) noexcept {
-        total_time_ = total_time;
-        idle_time_ = idle_time;
-        retired_ = retired;
+    std::uint64_t GetId() const noexcept {
+        return *dog_.GetId();
+    }
+
+    model::Dog& GetDog() const noexcept {
+        return dog_;
+    }
+
+    model::GameSession& GetSession() const noexcept {
+        return session_;
     }
 
 private:
     Token token_;
     model::Dog& dog_;
     model::GameSession& session_;
-    std::chrono::milliseconds total_time_{};
-    std::chrono::milliseconds idle_time_{};
-    bool retired_ = false;
+};
+
+// Запись об игроке в формате, пригодном для сохранения на диск: явно хранит
+// токен (строкой), id собаки и id карты, к которой относится сессия.
+struct PlayerRecordForSave {
+    std::string token;
+    std::uint64_t dog_id = 0;
+    std::string map_id;
 };
 
 class Players {
 public:
+
     Player& Add(model::Dog& dog, model::GameSession& session);
 
-    // Добавляет игрока с уже известными token и таймерами (для загрузки состояния).
-    Player& AddRestored(Token token,
-                        model::Dog& dog,
-                        model::GameSession& session,
-                        std::chrono::milliseconds total_time,
-                        std::chrono::milliseconds idle_time,
-                        bool retired);
+    // Добавляет игрока с уже существующим (например, восстановленным из
+    // файла) токеном, а не сгенерированным заново.
+    Player& AddWithToken(Token token, model::Dog& dog, model::GameSession& session);
 
     const Player* FindByToken(const Token& token) const;
-    Player* FindByTokenMutable(const Token& token);
 
-    std::deque<Player>& GetAll() noexcept { return players_; }
-    const std::deque<Player>& GetAll() const noexcept { return players_; }
-
-    // Полная очистка (для загрузки состояния).
-    void Clear() noexcept {
-        players_.clear();
-        token_to_player_.clear();
-    }
+    // Возвращает записи обо всех игроках в виде, пригодном для сохранения.
+    std::vector<PlayerRecordForSave> GetAllForSerialization() const;
 
 private:
     PlayerTokens token_generator_;
@@ -109,4 +91,4 @@ private:
     std::unordered_map<Token, Player*, util::TaggedHasher<Token>> token_to_player_;
 };
 
-}  // namespace app
+}

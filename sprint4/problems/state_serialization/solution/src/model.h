@@ -1,27 +1,22 @@
 #pragma once
 #include <chrono>
-#include <memory>
+#include <cstdint>
+#include <deque>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include "geom.h"
+#include "loot_generator.h"
 #include "tagged.h"
 
 namespace model {
-
-// ============================================================
-//  Базовые геометрические типы
-// ============================================================
 
 using Dimension = int;
 using Coord = Dimension;
 
 struct Point {
     Coord x, y;
-    constexpr auto operator<=>(const Point&) const = default;
 };
 
 struct Size {
@@ -37,169 +32,83 @@ struct Offset {
     Dimension dx, dy;
 };
 
-// Алиасы, используемые в app.h/api_handler.cpp
-using Position = geom::Point2D;
+struct Position {
+    double x = 0;
+    double y = 0;
+};
 
 struct Speed {
-    double vx = 0.0;
-    double vy = 0.0;
-
-    Speed() = default;
-    Speed(double vx_, double vy_) : vx(vx_), vy(vy_) {}
-
-    // Совместимость с geom::Vec2D (Dog хранит именно geom::Vec2D).
-    Speed(const geom::Vec2D& v) : vx(v.x), vy(v.y) {}
-    operator geom::Vec2D() const { return {vx, vy}; }
-
-    auto operator<=>(const Speed&) const = default;
+    double vx = 0;
+    double vy = 0;
 };
 
-// ============================================================
-//  Потерянные / подобранные объекты
-// ============================================================
-
-using LostObjectType = unsigned;
-using Score = unsigned;
-
-struct FoundObject {
-    using Id = util::Tagged<uint32_t, FoundObject>;
-
-    Id id{0u};
-    LostObjectType type{0u};
-
-    [[nodiscard]] auto operator<=>(const FoundObject&) const = default;
+struct Bounds {
+    double min_x = 0;
+    double max_x = 0;
+    double min_y = 0;
+    double max_y = 0;
 };
-
-class LostObject {
-public:
-    using Id = util::Tagged<uint32_t, LostObject>;
-
-    LostObject() = default;
-    LostObject(Id id, LostObjectType type, geom::Point2D pos)
-        : id_(id)
-        , type_(type)
-        , position_(pos) {
-    }
-
-    const Id& GetId() const noexcept { return id_; }
-    LostObjectType GetType() const noexcept { return type_; }
-    const geom::Point2D& GetPosition() const noexcept { return position_; }
-
-private:
-    Id id_{0u};
-    LostObjectType type_ = 0;
-    geom::Point2D position_;
-};
-
-// ============================================================
-//  Направление и собака
-// ============================================================
 
 enum class Direction {
     NORTH,
-    EAST,
-    WEST,
     SOUTH,
+    WEST,
+    EAST,
 };
-
-class Dog {
-public:
-    using Id = util::Tagged<uint32_t, Dog>;
-    using BagContent = std::vector<FoundObject>;
-
-    Dog(Id id, std::string name, geom::Point2D pos, size_t bag_cap)
-        : id_(std::move(id))
-        , name_(std::move(name))
-        , position_(pos)
-        , bag_cap_(bag_cap) {
-        bag_.reserve(bag_cap);
-    }
-
-    const Id& GetId() const noexcept { return id_; }
-    const std::string& GetName() const noexcept { return name_; }
-    const geom::Point2D& GetPosition() const noexcept { return position_; }
-    const geom::Vec2D& GetSpeed() const noexcept { return speed_; }
-
-    void SetSpeed(geom::Vec2D speed) noexcept { speed_ = speed; }
-    void SetPosition(geom::Point2D position) noexcept { position_ = position; }
-    void SetDirection(Direction d) noexcept { direction_ = d; }
-    Direction GetDirection() const noexcept { return direction_; }
-
-    size_t GetBagCapacity() const noexcept { return bag_cap_; }
-    Score GetScore() const noexcept { return score_; }
-    void AddScore(Score s) noexcept { score_ += s; }
-
-    [[nodiscard]] bool PutToBag(FoundObject item) {
-        if (IsBagFull()) return false;
-        bag_.push_back(item);
-        return true;
-    }
-
-    size_t EmptyBag() noexcept {
-        auto n = bag_.size();
-        bag_.clear();
-        return n;
-    }
-
-    bool IsBagFull() const noexcept { return bag_.size() >= bag_cap_; }
-    const BagContent& GetBag() const noexcept { return bag_; }
-    const BagContent& GetBagContent() const noexcept { return bag_; }
-
-    // Пенсия (для save/load состояния).
-    void SetRetired() noexcept { retired_ = true; }
-    bool IsRetired() const noexcept { return retired_; }
-
-private:
-    Id id_;
-    std::string name_;
-    geom::Point2D position_;
-    geom::Vec2D speed_;
-    Direction direction_{Direction::NORTH};
-    BagContent bag_;
-    size_t bag_cap_;
-    Score score_{};
-    bool retired_ = false;
-};
-
-using DogPtr = std::shared_ptr<Dog>;
-using ConstDogPtr = std::shared_ptr<const Dog>;
-
-// ============================================================
-//  Компоненты карты
-// ============================================================
 
 class Road {
-public:
-    enum Orientation { HORIZONTAL, VERTICAL };
+    struct HorizontalTag {
+        explicit HorizontalTag() = default;
+    };
 
-    Road() = default;
-    Road(Orientation orientation, Point start, Coord end)
-        : orientation_(orientation)
-        , start_(start)
-        , end_coord_(end) {
+    struct VerticalTag {
+        explicit VerticalTag() = default;
+    };
+
+public:
+    constexpr static HorizontalTag HORIZONTAL{};
+    constexpr static VerticalTag VERTICAL{};
+
+    Road(HorizontalTag, Point start, Coord end_x) noexcept
+        : start_{start}
+        , end_{end_x, start.y} {
     }
 
-    bool IsHorizontal() const noexcept { return orientation_ == HORIZONTAL; }
-    const Point& GetStart() const noexcept { return start_; }
+    Road(VerticalTag, Point start, Coord end_y) noexcept
+        : start_{start}
+        , end_{start.x, end_y} {
+    }
+
+    bool IsHorizontal() const noexcept {
+        return start_.y == end_.y;
+    }
+
+    bool IsVertical() const noexcept {
+        return start_.x == end_.x;
+    }
+
+    Point GetStart() const noexcept {
+        return start_;
+    }
 
     Point GetEnd() const noexcept {
-        if (IsHorizontal()) return {end_coord_, start_.y};
-        return {start_.x, end_coord_};
+        return end_;
     }
 
-    Orientation GetOrientation() const noexcept { return orientation_; }
-
 private:
-    Orientation orientation_ = HORIZONTAL;
-    Point start_{};
-    Coord end_coord_ = 0;
+    Point start_;
+    Point end_;
 };
 
 class Building {
 public:
-    explicit Building(Rectangle bounds) : bounds_(bounds) {}
+    explicit Building(Rectangle bounds) noexcept
+        : bounds_{bounds} {
+    }
 
-    const Rectangle& GetBounds() const noexcept { return bounds_; }
+    const Rectangle& GetBounds() const noexcept {
+        return bounds_;
+    }
 
 private:
     Rectangle bounds_;
@@ -209,212 +118,391 @@ class Office {
 public:
     using Id = util::Tagged<std::string, Office>;
 
-    Office(Id id, Point position, Offset offset)
-        : id_(std::move(id))
-        , position_(position)
-        , offset_(offset) {
+    Office(Id id, Point position, Offset offset) noexcept
+        : id_{std::move(id)}
+        , position_{position}
+        , offset_{offset} {
     }
 
-    const Id& GetId() const noexcept { return id_; }
-    Point GetPosition() const noexcept { return position_; }
-    Offset GetOffset() const noexcept { return offset_; }
+    const Id& GetId() const noexcept {
+        return id_;
+    }
+
+    Point GetPosition() const noexcept {
+        return position_;
+    }
+
+    Offset GetOffset() const noexcept {
+        return offset_;
+    }
 
 private:
     Id id_;
-    Point position_{};
-    Offset offset_{};
+    Point position_;
+    Offset offset_;
 };
-
-// ============================================================
-//  Карта
-// ============================================================
 
 class Map {
 public:
     using Id = util::Tagged<std::string, Map>;
+    using Roads = std::vector<Road>;
+    using Buildings = std::vector<Building>;
+    using Offices = std::vector<Office>;
 
-    Map(Id id, std::string name)
+    Map(Id id, std::string name) noexcept
         : id_(std::move(id))
         , name_(std::move(name)) {
     }
 
-    const Id& GetId() const noexcept { return id_; }
-    const std::string& GetName() const noexcept { return name_; }
+    const Id& GetId() const noexcept {
+        return id_;
+    }
 
-    const std::vector<Road>& GetRoads() const noexcept { return roads_; }
-    const std::vector<Building>& GetBuildings() const noexcept { return buildings_; }
-    const std::vector<Office>& GetOffices() const noexcept { return offices_; }
+    const std::string& GetName() const noexcept {
+        return name_;
+    }
 
-    void AddRoad(Road r) { roads_.push_back(std::move(r)); }
-    void AddBuilding(Building b) { buildings_.push_back(std::move(b)); }
-    void AddOffice(Office o) { offices_.push_back(std::move(o)); }
+    const Buildings& GetBuildings() const noexcept {
+        return buildings_;
+    }
 
-    void SetDogSpeed(double s) noexcept { dog_speed_ = s; }
-    double GetDogSpeed() const noexcept { return dog_speed_; }
+    const Roads& GetRoads() const noexcept {
+        return roads_;
+    }
 
-    void SetBagCapacity(unsigned c) noexcept { bag_capacity_ = c; }
-    unsigned GetBagCapacity() const noexcept { return bag_capacity_; }
+    const Offices& GetOffices() const noexcept {
+        return offices_;
+    }
 
-    void SetLootTypesCount(size_t c) noexcept { loot_types_count_ = c; }
-    size_t GetLootTypesCount() const noexcept { return loot_types_count_; }
+    double GetDogSpeed() const noexcept {
+        return dog_speed_;
+    }
 
-    void SetLootValues(std::vector<unsigned> v) { loot_values_ = std::move(v); }
-    const std::vector<unsigned>& GetLootValues() const noexcept { return loot_values_; }
+    void SetDogSpeed(double dog_speed) noexcept {
+        dog_speed_ = dog_speed;
+    }
 
-    // Точка появления собаки (позиция первого офиса).
-    std::optional<geom::Point2D> GetSpawnPoint() const {
-        if (offices_.empty()) return std::nullopt;
-        const auto& p = offices_.front().GetPosition();
-        return geom::Point2D{static_cast<double>(p.x), static_cast<double>(p.y)};
+    void AddRoad(const Road& road) {
+        roads_.emplace_back(road);
+    }
+
+    void AddBuilding(const Building& building) {
+        buildings_.emplace_back(building);
+    }
+
+    void AddOffice(Office office);
+
+    Bounds ComputeBounds(Position pos) const noexcept;
+
+    // Количество различных типов трофеев (lootTypes), заданных для этой карты
+    // в конфигурационном файле. Само содержимое lootTypes (нужное лишь фронтенду)
+    // модель не хранит - см. модуль extra_data.
+    unsigned GetLootTypesCount() const noexcept {
+        return loot_types_count_;
+    }
+
+    void SetLootTypesCount(unsigned loot_types_count) noexcept {
+        loot_types_count_ = loot_types_count;
+    }
+
+    // Стоимость (score) каждого типа трофея на этой карте - индекс в
+    // возвращаемом векторе соответствует типу трофея. Устанавливается
+    // одновременно с разбором lootTypes из конфигурационного файла.
+    void SetLootValues(std::vector<unsigned> loot_values) {
+        loot_values_ = std::move(loot_values);
+    }
+
+    // Стоимость трофея данного типа. Возвращает 0, если для этого типа
+    // стоимость не была задана (например, тип вне диапазона).
+    unsigned GetLootValue(unsigned type) const noexcept {
+        return type < loot_values_.size() ? loot_values_[type] : 0u;
+    }
+
+    // Вместимость рюкзака собак на этой карте.
+    unsigned GetBagCapacity() const noexcept {
+        return bag_capacity_;
+    }
+
+    void SetBagCapacity(unsigned bag_capacity) noexcept {
+        bag_capacity_ = bag_capacity;
+    }
+
+private:
+    using OfficeIdToIndex = std::unordered_map<Office::Id, size_t, util::TaggedHasher<Office::Id>>;
+
+    Id id_;
+    std::string name_;
+    Roads roads_;
+    Buildings buildings_;
+    double dog_speed_ = 1.0;
+    unsigned loot_types_count_ = 0;
+    unsigned bag_capacity_ = 3;
+    std::vector<unsigned> loot_values_;
+
+    OfficeIdToIndex warehouse_id_to_index_;
+    Offices offices_;
+};
+
+class LostObject {
+public:
+    using Id = util::Tagged<std::uint64_t, LostObject>;
+
+    LostObject(Id id, unsigned type, Position position) noexcept
+        : id_(id)
+        , type_(type)
+        , position_(position) {
+    }
+
+    const Id& GetId() const noexcept {
+        return id_;
+    }
+
+    unsigned GetType() const noexcept {
+        return type_;
+    }
+
+    Position GetPosition() const noexcept {
+        return position_;
+    }
+
+private:
+    Id id_;
+    unsigned type_;
+    Position position_;
+};
+
+// Предмет, лежащий в рюкзаке собаки. id и type совпадают с теми, что были у
+// предмета до того, как его подобрали (см. LostObject).
+struct BagItem {
+    LostObject::Id id;
+    unsigned type;
+};
+
+class Dog {
+public:
+    using Id = util::Tagged<std::uint64_t, Dog>;
+
+    Dog(Id id, std::string name, Position position, unsigned bag_capacity) noexcept
+        : id_(id)
+        , name_(std::move(name))
+        , position_(position)
+        , bag_capacity_(bag_capacity) {
+    }
+
+    const Id& GetId() const noexcept {
+        return id_;
+    }
+
+    const std::string& GetName() const noexcept {
+        return name_;
+    }
+
+    Position GetPosition() const noexcept {
+        return position_;
+    }
+
+    void SetPosition(Position position) noexcept {
+        position_ = position;
+    }
+
+    Speed GetSpeed() const noexcept {
+        return speed_;
+    }
+
+    void SetSpeed(Speed speed) noexcept {
+        speed_ = speed;
+    }
+
+    Direction GetDirection() const noexcept {
+        return direction_;
+    }
+
+    void SetDirection(Direction direction) noexcept {
+        direction_ = direction;
+    }
+
+    const std::vector<BagItem>& GetBag() const noexcept {
+        return bag_;
+    }
+
+    bool IsBagFull() const noexcept {
+        return bag_.size() >= bag_capacity_;
+    }
+
+    // Пытается положить предмет в рюкзак. Возвращает false, если рюкзак
+    // уже полон - в этом случае предмет остаётся не собранным.
+    bool TryPutInBag(LostObject::Id id, unsigned type) {
+        if (IsBagFull()) {
+            return false;
+        }
+        bag_.push_back(BagItem{id, type});
+        return true;
+    }
+
+    // Опустошает рюкзак - все предметы считаются сданными на базу.
+    void ClearBag() noexcept {
+        bag_.clear();
+    }
+
+    unsigned GetScore() const noexcept {
+        return score_;
+    }
+
+    void AddScore(unsigned points) noexcept {
+        score_ += points;
     }
 
 private:
     Id id_;
     std::string name_;
-    std::vector<Road> roads_;
-    std::vector<Building> buildings_;
-    std::vector<Office> offices_;
-
-    double dog_speed_ = 1.0;
-    unsigned bag_capacity_ = 3;
-    size_t loot_types_count_ = 0;
-    std::vector<unsigned> loot_values_;
+    Position position_;
+    Speed speed_{};
+    Direction direction_ = Direction::NORTH;
+    std::vector<BagItem> bag_;
+    unsigned bag_capacity_;
+    unsigned score_ = 0;
 };
-
-// ============================================================
-//  Игровая сессия
-// ============================================================
 
 class GameSession {
 public:
-    explicit GameSession(const Map& map) : map_(map) {}
+    using TimeInterval = loot_gen::LootGenerator::TimeInterval;
+    // Генератор псевдослучайных чисел в диапазоне [0, 1), используемый для
+    // выбора дороги, точки на дороге и типа трофея при генерации потерянных
+    // предметов. Вынесен отдельно от LootGenerator::RandomGenerator, чтобы
+    // тесты могли независимо контролировать оба источника случайности.
+    using UniformRandomGenerator = std::function<double()>;
 
-    const Map& GetMap() const noexcept { return map_; }
-
-    Dog& AddDog(const std::string& name) {
-        const auto pos = map_.GetSpawnPoint().value_or(geom::Point2D{0.0, 0.0});
-        dogs_.push_back(std::make_shared<Dog>(
-            Dog::Id{next_dog_id_++}, name, pos, map_.GetBagCapacity()));
-        return *dogs_.back();
+    GameSession(const Map& map, TimeInterval loot_base_interval, double loot_probability,
+               loot_gen::LootGenerator::RandomGenerator loot_random_gen, UniformRandomGenerator uniform_gen,
+               bool randomize_spawn_points = false)
+        : map_(map)
+        , randomize_spawn_points_(randomize_spawn_points)
+        , loot_generator_(loot_base_interval, loot_probability, std::move(loot_random_gen))
+        , uniform_gen_(std::move(uniform_gen)) {
     }
 
-    const std::vector<DogPtr>& GetDogs() const noexcept { return dogs_; }
+    GameSession(const GameSession&) = delete;
+    GameSession& operator=(const GameSession&) = delete;
 
-    const std::unordered_map<LostObject::Id, LostObject,
-                             util::TaggedHasher<LostObject::Id>>&
-    GetLostObjects() const noexcept {
+    const Map& GetMap() const noexcept {
+        return map_;
+    }
+
+    Dog& AddDog(std::string name);
+
+    const std::deque<Dog>& GetDogs() const noexcept {
+        return dogs_;
+    }
+
+    // Перемещает собак согласно их скорости за dt_seconds, ограничивая их
+    // движение дорогами карты, а затем обрабатывает сбор предметов и
+    // возвращение их на базу для всех событий столкновений, произошедших
+    // за это перемещение (в хронологическом порядке).
+    void Move(double dt_seconds);
+
+    const std::deque<LostObject>& GetLostObjects() const noexcept {
         return lost_objects_;
     }
 
-    // Восстановление из сохранённого состояния.
-    void AddRestoredDog(Dog dog) {
-        const auto id_val = *dog.GetId();
-        if (id_val >= next_dog_id_) next_dog_id_ = id_val + 1;
-        dogs_.push_back(std::make_shared<Dog>(std::move(dog)));
-    }
+    // Спрашивает у встроенного LootGenerator, сколько трофеев должно
+    // появиться на карте спустя time_delta с момента предыдущего вызова, и
+    // генерирует их в случайных точках на случайных дорогах карты.
+    void GenerateLoot(TimeInterval time_delta);
 
-    void AddRestoredLostObject(LostObject obj) {
-        const auto id_val = *obj.GetId();
-        if (id_val >= next_loot_id_) next_loot_id_ = id_val + 1;
-        lost_objects_.emplace(obj.GetId(), std::move(obj));
-    }
+    // ---- Восстановление состояния из файла (см. state_serialization) ----
 
-    Dog* FindDog(const Dog::Id& id) noexcept {
-        for (auto& d : dogs_) {
-            if (d->GetId() == id) return d.get();
-        }
-        return nullptr;
-    }
+    // Добавляет в сессию собаку с полностью заданным состоянием (используется
+    // при восстановлении из сохранённого файла). id, позиция, скорость,
+    // направление, очки и содержимое рюкзака берутся как есть, без каких-либо
+    // проверок и без генерации новой позиции. next_dog_id_ обновляется так,
+    // чтобы не пересечься с восстановленным id.
+    Dog& RestoreDog(Dog::Id id, const std::string& name, Position position, Speed speed, Direction direction,
+                    unsigned score, const std::vector<BagItem>& bag);
 
-    // Тик сессии (движение, сбор трофеев, генерация). Реализация в model.cpp.
-    void Tick(std::chrono::milliseconds delta);
+    // Полностью заменяет содержимое потерянных вещей восстановленным набором;
+    // next_loot_id_ обновляется так, чтобы не пересечься с восстановленными id.
+    void RestoreLostObjects(std::deque<LostObject> lost_objects);
+
+    // Возвращает собаку с указанным id. Бросает исключение, если такой собаки
+    // в сессии нет (используется при восстановлении токенов игроков).
+    Dog& GetDogById(Dog::Id id);
 
 private:
-    const Map& map_;
-    std::vector<DogPtr> dogs_;
-    std::unordered_map<LostObject::Id, LostObject,
-                       util::TaggedHasher<LostObject::Id>>
-        lost_objects_;
-    uint32_t next_dog_id_ = 0;
-    uint32_t next_loot_id_ = 0;
-};
+    Position GenerateStartPosition() const;
 
-// ============================================================
-//  Игра — контейнер карт и сессий
-// ============================================================
+    // Определяет события столкновений собак с предметами и базами,
+    // произошедшие при перемещении из start_positions в end_positions
+    // (индексы соответствуют порядку обхода dogs_), и применяет их эффект:
+    // кладёт предметы в рюкзак (если он не полон) либо опустошает рюкзак
+    // при достижении базы. Обрабатывает события строго в хронологическом
+    // порядке.
+    void GatherItems(const std::vector<Position>& start_positions, const std::vector<Position>& end_positions);
+
+    const Map& map_;
+    bool randomize_spawn_points_;
+    std::deque<Dog> dogs_;
+    std::uint64_t next_dog_id_ = 0;
+
+    std::deque<LostObject> lost_objects_;
+    std::uint64_t next_loot_id_ = 0;
+
+    loot_gen::LootGenerator loot_generator_;
+    UniformRandomGenerator uniform_gen_;
+};
 
 class Game {
 public:
-    Game() = default;
+    using Maps = std::vector<Map>;
 
-    void AddMap(Map map) {
-        const auto id = map.GetId();
-        map_id_to_index_[id] = maps_.size();
-        maps_.push_back(std::move(map));
+    void AddMap(Map map);
+
+    const Maps& GetMaps() const noexcept {
+        return maps_;
     }
-
-    const std::vector<Map>& GetMaps() const noexcept { return maps_; }
 
     const Map* FindMap(const Map::Id& id) const noexcept {
         if (auto it = map_id_to_index_.find(id); it != map_id_to_index_.end()) {
-            return &maps_[it->second];
+            return &maps_.at(it->second);
         }
         return nullptr;
     }
 
-    GameSession& JoinSession(const Map::Id& id) {
-        if (auto it = sessions_.find(id); it != sessions_.end()) {
-            return it->second;
+    GameSession& JoinSession(const Map::Id& map_id);
+
+    // Возвращает существующую сессию для карты, либо nullptr, если для этой
+    // карты ещё не было создано ни одной сессии (в отличие от JoinSession,
+    // не создаёт сессию). Используется при сохранении состояния.
+    const GameSession* FindSession(const Map::Id& map_id) const noexcept {
+        if (auto it = map_id_to_session_index_.find(map_id); it != map_id_to_session_index_.end()) {
+            return &sessions_[it->second];
         }
-        const auto* map = FindMap(id);
-        if (!map) {
-            throw std::runtime_error("Map not found");
-        }
-        auto [it, _] = sessions_.emplace(id, GameSession{*map});
-        return it->second;
+        return nullptr;
     }
 
-    const std::unordered_map<Map::Id, GameSession,
-                             util::TaggedHasher<Map::Id>>&
-    GetSessions() const noexcept {
-        return sessions_;
+    void Tick(std::chrono::milliseconds delta);
+
+    void SetRandomizeSpawnPoints(bool randomize_spawn_points) noexcept {
+        randomize_spawn_points_ = randomize_spawn_points;
     }
 
-    // Полный сброс сессий (используется при загрузке состояния).
-    void ResetSessions() noexcept { sessions_.clear(); }
-
-    void Tick(std::chrono::milliseconds delta) {
-        for (auto& [_, session] : sessions_) {
-            session.Tick(delta);
-        }
-    }
-
-    void SetDogRetirementTime(std::chrono::milliseconds t) noexcept {
-        dog_retirement_time_ = t;
-    }
-    std::chrono::milliseconds GetDogRetirementTime() const noexcept {
-        return dog_retirement_time_;
-    }
-
-    void SetLootGeneratorConfig(std::chrono::milliseconds period, double prob) noexcept {
-        loot_period_ = period;
-        loot_probability_ = prob;
-    }
-    std::chrono::milliseconds GetLootPeriod() const noexcept { return loot_period_; }
-    double GetLootProbability() const noexcept { return loot_probability_; }
-
-    void SetRandomizeSpawnPoints(bool v) noexcept { randomize_spawn_points_ = v; }
-    bool GetRandomizeSpawnPoints() const noexcept { return randomize_spawn_points_; }
+    // Настраивает генератор трофеев значениями из конфигурационного файла.
+    // period задаётся в миллисекундах, probability - вероятность появления
+    // трофея в течение period.
+    void SetLootGeneratorConfig(std::chrono::milliseconds period, double probability);
 
 private:
-    std::vector<Map> maps_;
-    std::unordered_map<Map::Id, size_t, util::TaggedHasher<Map::Id>> map_id_to_index_;
-    std::unordered_map<Map::Id, GameSession, util::TaggedHasher<Map::Id>> sessions_;
+    using MapIdHasher = util::TaggedHasher<Map::Id>;
+    using MapIdToIndex = std::unordered_map<Map::Id, size_t, MapIdHasher>;
 
-    std::chrono::milliseconds dog_retirement_time_{60000};
-    std::chrono::milliseconds loot_period_{5000};
-    double loot_probability_ = 0.5;
+    std::vector<Map> maps_;
+    MapIdToIndex map_id_to_index_;
+
+    std::deque<GameSession> sessions_;
+    MapIdToIndex map_id_to_session_index_;
     bool randomize_spawn_points_ = false;
+
+    std::chrono::milliseconds loot_period_{1000};
+    double loot_probability_ = 0.0;
 };
 
-}  // namespace model
+}

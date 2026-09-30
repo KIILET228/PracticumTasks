@@ -1,7 +1,7 @@
 #pragma once
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -36,6 +36,8 @@ struct PlayerInfo {
     std::string name;
 };
 
+// Предмет в рюкзаке игрока, как он должен попасть в ответ на
+// /api/v1/game/state. id и type - те же, что были у предмета до подбора.
 struct BagItemInfo {
     std::uint64_t id;
     unsigned type;
@@ -59,12 +61,6 @@ struct GameStateResult {
     std::map<std::uint64_t, LostObjectState> lost_objects;
 };
 
-struct PlayerRecord {
-    std::string name;
-    unsigned score;
-    double play_time_seconds;
-};
-
 class Application {
 public:
     explicit Application(model::Game& game) noexcept
@@ -78,10 +74,6 @@ public:
         return game_;
     }
 
-    // Доступ к игрокам для сериализации состояния.
-    const Players& GetPlayers() const noexcept { return players_; }
-    Players& GetPlayers() noexcept { return players_; }
-
     JoinGameResult JoinGame(const std::string& user_name, const std::string& map_id_str);
 
     std::map<std::uint64_t, PlayerInfo> GetPlayers(const Token& token) const;
@@ -92,27 +84,19 @@ public:
 
     void Tick(std::chrono::milliseconds delta);
 
-    std::vector<PlayerRecord> GetRecords(size_t start, size_t max_items) const;
+    // Сохраняет полное состояние игры (собаки, потерянные вещи, токены
+    // игроков) в файл по указанному пути. Файл перезаписывается целиком.
+    void SaveState(const std::filesystem::path& path) const;
 
-    // === Восстановление состояния ===
-
-    // Полностью очищает список игроков (используется при загрузке состояния).
-    void ClearPlayers() noexcept {
-        players_.Clear();
-    }
-
-    // Восстанавливает игрока из ранее сохранённого состояния.
-    void RestorePlayer(Token token,
-                       model::Dog& dog,
-                       model::GameSession& session,
-                       std::chrono::milliseconds total_time,
-                       std::chrono::milliseconds idle_time,
-                       bool retired);
+    // Загружает состояние игры из файла, ранее сохранённого SaveState.
+    // Если файл не существует, ничего не делает (игра остаётся пустой).
+    // Должна вызываться до начала обработки запросов, когда в игре ещё нет
+    // ни одной сессии/игрока.
+    void LoadState(const std::filesystem::path& path);
 
 private:
     model::Game& game_;
     Players players_;
-    std::vector<PlayerRecord> records_;
 };
 
-}  // namespace app
+}

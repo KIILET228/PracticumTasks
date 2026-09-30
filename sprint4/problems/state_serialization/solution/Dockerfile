@@ -1,69 +1,50 @@
-# ---------- Стадия сборки ----------
-FROM ubuntu:22.04 AS builder
+FROM gcc:12 AS build
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=UTC
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        cmake \
-        ninja-build \
-        git \
-        ca-certificates \
-        python3 \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
         python3-pip \
-        python3-venv \
-        pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+        cmake \
+        make && \
+    rm -rf /var/lib/apt/lists/*
 
-# Conan 1.x — потому что conanfile.txt использует генератор cmake_multi
-RUN pip3 install --no-cache-dir "conan==1.59.0"
+RUN pip3 install --no-cache-dir --break-system-packages "conan<2.0"
 
-WORKDIR /src
-
-# Сначала конфиги (кэшируем слой установки зависимостей)
-COPY conanfile.txt ./
-COPY CMakeLists.txt ./
-
-# Ставим зависимости в ./build
-RUN mkdir -p build && cd build && \
-    conan install .. \
-        -s build_type=Release \
-        -s compiler.libcxx=libstdc++11 \
-        --build=missing
-
-# Теперь весь исходник
-COPY . .
-
-WORKDIR /src/build
-RUN cmake .. -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build . --target game_server -j"$(nproc)"
-
-# ---------- Runtime-стадия ----------
-FROM ubuntu:22.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libstdc++6 \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN conan profile new default --detect && \
+    conan profile update settings.compiler.libcxx=libstdc++11 default
 
 WORKDIR /app
 
-# Бинарь по пути, который ждёт тест
-COPY --from=builder /src/build/game_server /app/game_server
+COPY conanfile.txt .
 
-# Конфиг и статика
-COPY --from=builder /src/config.json      /app/data/config.json
-COPY --from=builder /src/static/          /app/static/
+RUN mkdir -p build && cd build && \
+    conan install .. --build=missing -s build_type=Release
 
-RUN chmod +x /app/game_server
+COPY CMakeLists.txt .
+COPY src/ ./src/
+COPY tests/ ./tests/
 
-# Том для state-файла монтируется снаружи как /tmp/volume
-VOLUME ["/tmp/volume"]
+RUN cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . --target game_server -j$(nproc)
+
+FROM ubuntu:22.04 AS run
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libstdc++6 && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+WORKDIR /app
+
+COPY --from=build /app/build/bin/game_server ./game_server
+
+COPY data/config.json ./data/config.json
+
+COPY static/ ./static/
+
+USER appuser
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/game_server"]
+ENTRYPOINT ["./game_server", "--config-file", "data/config.json", "--www-root", "static"]

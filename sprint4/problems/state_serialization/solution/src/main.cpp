@@ -1,7 +1,6 @@
 #include "sdk.h"
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
-#include <boost/asio/steady_timer.hpp>
 #include <boost/program_options.hpp>
 #include <chrono>
 #include <filesystem>
@@ -13,7 +12,6 @@
 #include "json_loader.h"
 #include "logger.h"
 #include "request_handler.h"
-#include "state_serialization.h"
 
 using namespace std::literals;
 namespace net = boost::asio;
@@ -38,15 +36,16 @@ struct Args {
     std::string config_file;
     std::string www_root;
     std::optional<std::chrono::milliseconds> tick_period;
-    std::optional<std::chrono::milliseconds> save_state_period;
-    std::optional<std::string> state_file;
     bool randomize_spawn_points = false;
+    std::optional<std::string> state_file;
+    std::optional<std::chrono::milliseconds> save_state_period;
 };
 
 std::optional<Args> ParseCommandLine(int argc, const char* argv[]) {
     po::options_description desc{"Allowed options"s};
 
     unsigned tick_period_ms = 0;
+    std::string state_file;
     unsigned save_state_period_ms = 0;
     Args args;
 
@@ -55,13 +54,11 @@ std::optional<Args> ParseCommandLine(int argc, const char* argv[]) {
         ("tick-period,t", po::value(&tick_period_ms)->value_name("milliseconds"s), "set tick period")
         ("config-file,c", po::value(&args.config_file)->value_name("file"s), "set config file path")
         ("www-root,w", po::value(&args.www_root)->value_name("dir"s), "set static files root")
-        ("state-file,s", po::value<std::string>()->notifier([&args](const std::string& v) {
-            args.state_file = v;
-        })->value_name("file"s), "set file for saving/loading game state")
-        ("save-state-period,p", po::value(&save_state_period_ms)->value_name("milliseconds"s),
-         "set state save period")
         ("randomize-spawn-points", po::bool_switch(&args.randomize_spawn_points),
-         "spawn dogs at random positions");
+         "spawn dogs at random positions")
+        ("state-file", po::value(&state_file)->value_name("file"s), "set game state file path")
+        ("save-state-period", po::value(&save_state_period_ms)->value_name("milliseconds"s),
+         "set game state autosave period");
 
     po::variables_map vm;
     po::store(po::command_line_parser(argc, argv).options(desc).run(), vm);
@@ -82,20 +79,29 @@ std::optional<Args> ParseCommandLine(int argc, const char* argv[]) {
     if (vm.contains("tick-period"s)) {
         args.tick_period = std::chrono::milliseconds(tick_period_ms);
     }
+
+    if (vm.contains("state-file"s)) {
+        args.state_file = state_file;
+    }
+
     if (vm.contains("save-state-period"s)) {
+        if (!args.state_file) {
+            throw std::runtime_error("--save-state-period requires --state-file to be set"s);
+        }
         args.save_state_period = std::chrono::milliseconds(save_state_period_ms);
     }
 
     return args;
 }
 
-}  // namespace
+}
 
 int main(int argc, const char* argv[]) {
     Args args;
     try {
         auto parsed = ParseCommandLine(argc, argv);
         if (!parsed) {
+
             return EXIT_SUCCESS;
         }
         args = std::move(*parsed);
@@ -113,61 +119,49 @@ int main(int argc, const char* argv[]) {
         const unsigned num_threads = std::thread::hardware_concurrency();
         net::io_context ioc(num_threads);
 
-        net::signal_set signals(ioc, SIGINT, SIGTERM);
-
         const bool tick_endpoint_enabled = !args.tick_period.has_value();
         http_handler::RequestHandler handler{game_data.game, game_data.loot_types_info, fs::path(args.www_root), ioc,
                                              tick_endpoint_enabled};
 
-        // Загружаем состояние до включения периодических сохранений.
-        if (args.state_file) {
-            try {
-                state_serialization::LoadState(handler.GetApiHandler().GetApplication(), *args.state_file);
-            } catch (const std::exception& ex) {
-                server_logging::LogError(0, ex.what(), "state load");
-            }
+        // Если указан файл состояния и он существует - восстанавливаем игру
+        // из него. Делаем это до того, как io_context начнёт обрабатывать
+        // запросы (ioc.run() ещё не вызван), поэтому конкурентного доступа
+        // к данным быть не может.
+        if (args.state_file && fs::exists(*args.state_file)) {
+            handler.GetApplication().LoadState(*args.state_file);
         }
+
+        net::signal_set signals(ioc, SIGINT, SIGTERM);
+        signals.async_wait([&ioc, &handler, &args](const sys::error_code& ec, [[maybe_unused]] int signal_number) {
+            if (ec) {
+                return;
+            }
+            // Сохранение состояния должно быть строго упорядочено
+            // относительно обработки API-запросов и игровых тиков (все они
+            // выполняются на api_strand_), иначе возможна гонка данных в
+            // многопоточном io_context. Поэтому не сохраняем состояние прямо
+            // здесь, а ставим это в очередь того же strand'а и останавливаем
+            // io_context уже после того, как сохранение гарантированно
+            // выполнено.
+            handler.PostOnApiStrand([&ioc, &handler, &args] {
+                if (args.state_file) {
+                    try {
+                        handler.SaveState(*args.state_file);
+                    } catch (const std::exception& save_ex) {
+                        server_logging::LogError(0, save_ex.what(), "SaveStateOnSignal"sv);
+                    }
+                }
+                ioc.stop();
+            });
+        });
 
         if (args.tick_period) {
             handler.EnablePeriodicTicks(*args.tick_period);
         }
 
-        // Периодическое сохранение состояния.
-        std::optional<net::steady_timer> save_timer;
-        std::function<void(const sys::error_code&)> save_handler;
-
         if (args.state_file && args.save_state_period) {
-            save_timer.emplace(ioc);
-            save_handler = [&](const sys::error_code& ec) {
-                if (ec) {
-                    return;
-                }
-                try {
-                    state_serialization::SaveState(handler.GetApiHandler().GetApplication(), *args.state_file);
-                } catch (const std::exception& ex) {
-                    server_logging::LogError(0, ex.what(), "periodic state save");
-                }
-                save_timer->expires_after(*args.save_state_period);
-                save_timer->async_wait(save_handler);
-            };
-            save_timer->expires_after(*args.save_state_period);
-            save_timer->async_wait(save_handler);
+            handler.EnablePeriodicStateSaving(*args.save_state_period, *args.state_file);
         }
-
-        // Сохранение при graceful shutdown.
-        signals.async_wait([&](const sys::error_code& ec, [[maybe_unused]] int signal_number) {
-            if (ec) {
-                return;
-            }
-            if (args.state_file) {
-                try {
-                    state_serialization::SaveState(handler.GetApiHandler().GetApplication(), *args.state_file);
-                } catch (const std::exception& ex) {
-                    server_logging::LogError(0, ex.what(), "final state save");
-                }
-            }
-            ioc.stop();
-        });
 
         const auto address = net::ip::make_address("0.0.0.0");
         constexpr net::ip::port_type port = 8080;
