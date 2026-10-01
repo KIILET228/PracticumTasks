@@ -3,6 +3,7 @@
 #include <boost/json.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
@@ -130,6 +131,10 @@ std::string_view DirectionToString(model::Direction dir) {
         case model::Direction::EAST:
             return "R"sv;
     }
+    // Все значения Direction обработаны выше: сюда поток попадать не должен.
+    // assert сработает при будущем рефакторинге (например, добавлении нового
+    // направления без обновления switch).
+    assert(false);
     return "U"sv;
 }
 

@@ -345,12 +345,13 @@ void GameSession::RestoreLostObjects(std::deque<LostObject> lost_objects) {
 }
 
 Dog& GameSession::GetDogById(Dog::Id id) {
-    for (auto& dog : dogs_) {
-        if (dog.GetId() == id) {
-            return dog;
-        }
+    const auto it = std::find_if(dogs_.begin(), dogs_.end(), [&id](const Dog& dog) {
+        return dog.GetId() == id;
+    });
+    if (it == dogs_.end()) {
+        throw std::out_of_range("Dog with the given id was not found in the session"s);
     }
-    throw std::out_of_range("Dog with the given id was not found in the session"s);
+    return *it;
 }
 
 void Game::SetLootGeneratorConfig(std::chrono::milliseconds period, double probability) {
